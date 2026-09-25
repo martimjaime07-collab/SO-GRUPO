@@ -10,8 +10,8 @@ int main(int argc, char **argv){
 	DataCenter dc;
 	datacenter_init(&dc);
 
-	if (argc != 5) {
-    fprintf(stderr, "Usage: %s <servers> <ram> <disk> <cpus>\n", argv[0]);
+	if (argc != 6) {
+    fprintf(stderr, "Usage: %s <servers> <ram> <disk> <cpus> <input_dir>\n", argv[0]);
     return 1;
   }
 
