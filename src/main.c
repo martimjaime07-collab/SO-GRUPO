@@ -19,15 +19,18 @@ int main(int argc, char **argv){
 	size_t ram;
 	size_t disk;
 	double cpu;
+	char *input_dir;
 
 	if (parse_size_t_arg(argv[1], &servers) != 0 ||
 			parse_size_t_arg(argv[2], &ram) != 0 ||
 			parse_size_t_arg(argv[3], &disk) != 0 ||
-			parse_double_arg(argv[4], &cpu) != 0) {
+			parse_double_arg(argv[4], &cpu) != 0 ||
+			path_exists(argv[5]) != 1) {
 		fprintf(stderr, "Invalid command line arguments.\n");
 		return 1;
 	}
 
+	input_dir = argv[5];
 	Resources resources = {
     .ram = ram,
     .disk = disk,
