@@ -35,4 +35,9 @@ int file_exists(const char *path);
  */
 int absolute_path(const char *path, char *buffer, size_t size);
 
+
+
+
+ssize_t list_conf_files(const char *path, char ***buffer);
+
 #endif // FILESYSTEM__H
