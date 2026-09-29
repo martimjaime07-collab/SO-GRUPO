@@ -2,6 +2,7 @@
 
 #include "filesystem.h"
 
+#include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -9,6 +10,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <dirent.h>
 
 int path_exists(const char *path){
   struct stat st;
@@ -43,4 +45,19 @@ int absolute_path(const char *path, char *buffer, size_t size){
 
   free(resolved);
   return 0;
+}
+
+ssize_t list_conf_files(const char *path, char ***buffer){
+
+  *buffer = NULL; 
+
+  DIR *dir = opendir(path);
+
+  if(dir == NULL){
+    perror("error opening dir");
+    return -1;
+  }
+
+  
+  close(dir);
 }
