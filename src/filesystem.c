@@ -58,6 +58,8 @@ ssize_t list_conf_files(const char *path, char ***buffer){
     return -1;
   }
 
-  
-  close(dir);
+  struct dirent *readdir(DIR *dir);
+
+
+  closedir(dir);
 }
