@@ -58,7 +58,14 @@ ssize_t list_conf_files(const char *path, char ***buffer){
     return -1;
   }
 
-  struct dirent *readdir(DIR *dir);
+  struct dirent *file;
+  int count = 0;
+  int capacity = 0;
+
+  while ((file = readdir(dir)) != NULL){
+    size_t size = strlen(file -> d_name);
+    
+  }
 
 
   closedir(dir);
