@@ -59,14 +59,26 @@ ssize_t list_conf_files(const char *path, char ***buffer){
   }
 
   struct dirent *file;
-  int count = 0;
-  int capacity = 0;
+  size_t count = 0;
+  size_t capacity = 8;
 
   while ((file = readdir(dir)) != NULL){
-    size_t size = strlen(file -> d_name);
+
+    size_t file_size = strlen(file->d_name);
     
+    /**
+     * We use < 6 to make sure that the file is at least a.conf, we dont want just .conf
+     */
+    if(file_size < 6){continue;} 
+
+    /**
+     * If the last 5 characters are not ".conf" we go checkout the next file
+     */
+    if(strcmp(file->d_name + file_size - 5,".conf") != 0) {continue;}
+
   }
 
 
   closedir(dir);
+  return count;
 }
