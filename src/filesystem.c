@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <errno.h>
 
 int path_exists(const char *path){
   struct stat st;
@@ -52,6 +53,7 @@ ssize_t list_conf_files(const char *path, char ***buffer){
   *buffer = NULL; 
 
   DIR *dir = opendir(path);
+  
 
   if(dir == NULL){
     perror("error opening dir");
@@ -62,7 +64,18 @@ ssize_t list_conf_files(const char *path, char ***buffer){
   size_t count = 0;
   size_t capacity = 8;
 
+  *buffer = malloc(capacity * sizeof(char *));
+
+  if(*buffer == NULL){
+    closedir(dir);
+    return -1;
+  }
+
+  errno = 0;  
   while ((file = readdir(dir)) != NULL){
+
+    errno = 0;
+    
 
     size_t file_size = strlen(file->d_name);
     
@@ -76,9 +89,57 @@ ssize_t list_conf_files(const char *path, char ***buffer){
      */
     if(strcmp(file->d_name + file_size - 5,".conf") != 0) {continue;}
 
+    if(count == capacity){
+
+      capacity *= 2;
+
+      char **tmp = realloc(*buffer, capacity * sizeof(char*));
+
+      if(tmp == NULL){
+        perror("realloc error");
+        for(size_t i = 0; i < count; i++){
+          free((*buffer)[i]);
+        }
+
+        free(*buffer);
+        *buffer = NULL;
+        closedir(dir);
+        return -1;
+      }
+      *buffer = tmp;
+    }
+
+    char *dup = strdup(file->d_name);
+
+    if(dup == NULL){
+      perror("strdup error");
+      for(size_t i = 0; i < count; i++){
+          free((*buffer)[i]);
+        }
+      free(*buffer);
+      closedir(dir);
+      *buffer = NULL;
+      return -1;
+    }
+    (*buffer)[count++] = dup; 
+    errno = 0;
+    
   }
 
+  /* We save errno because we call closedir next and it can change the previous errno */
+
+  int readdir_errno = errno;
 
   closedir(dir);
-  return count;
+  
+  if(readdir_errno == 0){
+    return (ssize_t)count;
+  }
+  else{
+    for(size_t i = 0; i < count; i++){
+          free((*buffer)[i]);
+        }
+    free(*buffer);
+    *buffer = NULL;
+    return -1;}
 }
