@@ -31,6 +31,12 @@ int file_exists(const char *path){
   return S_ISREG(st.st_mode);
 }
 
+static int compare_strings(const void *a, const void *b){
+    const char *sa = *(const char * const *)a;
+    const char *sb = *(const char * const *)b;
+    return strcmp(sa,sb);
+  }
+
 int absolute_path(const char *path, char *buffer, size_t size){
   char *resolved = realpath(path, NULL);
 
@@ -131,6 +137,10 @@ ssize_t list_conf_files(const char *path, char ***buffer){
   int readdir_errno = errno;
 
   closedir(dir);
+
+
+
+  qsort(*buffer, count, sizeof(char *), compare_strings);
   
   if(readdir_errno == 0){
     return (ssize_t)count;
