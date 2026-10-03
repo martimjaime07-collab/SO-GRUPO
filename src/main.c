@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <string.h>
 
 #include "parser.h"
 #include "datacenter.h"
@@ -46,25 +48,28 @@ int main(int argc, char **argv){
 
 	ssize_t count = list_conf_files(input_dir, &buffer);
 
-	//REMOVE BEFORE SUBMITING, DEBUG ONLY!!!
 	if(count == 0){
 		fprintf(stderr, "No .conf files\n");
-		return 1;
-	}
-	else{
-		printf("%ld\n", count);
-		for(int i = 0; i < count; i++){
-			printf("%s\n", buffer[i]);
-		}
 		return 0;
 	}
 
 	for(int i = 0; i < count; i++){
-		switch (get_next_command(STDIN_FILENO)){
+		char path[MAX_PATH_SIZE];
+		snprintf(path, MAX_PATH_SIZE,"%s/%s",input_dir, buffer[i]);
+		int fd = open(path, O_RDONLY);
+
+		if(fd == -1){
+			fprintf(stderr, "Failed to open file.\n");
+			continue;
+		}
+		int j = 1;
+
+		while(j != 0){
+			switch (get_next_command(fd)){
 			case CMD_DEFINE: {
 				VMType vmtype;
 
-				if (parse_define(STDIN_FILENO, &vmtype) != 0) {
+				if (parse_define(fd, &vmtype) != 0) {
 					fprintf(stderr, "Invalid define command. See H (help) for usage.\n");
 					continue;
 				}
@@ -82,7 +87,7 @@ int main(int argc, char **argv){
 			case CMD_RESERVE: {
 				Reservation reservation = {0};
 
-				size_t num_items = parse_reserve(STDIN_FILENO, &reservation, MAX_RESERVATIONS_ITEMS);
+				size_t num_items = parse_reserve(fd, &reservation, MAX_RESERVATIONS_ITEMS);
 
 				if (num_items == 0) {
 					fprintf(stderr, "Invalid reserve command. See H (help) for usage.\n");
@@ -99,10 +104,10 @@ int main(int argc, char **argv){
 				break;
 			}
 
-			case CMD_EXECUTE:
+			case CMD_EXECUTE:{
 				char id[MAX_STRING_SIZE];
 
-				if(parse_execute(STDIN_FILENO, id) != 0){
+				if(parse_execute(fd, id) != 0){
 					fprintf(stderr, "Invalid execute command. See H (help) for usage.\n");
 					continue;
 				}
@@ -114,32 +119,32 @@ int main(int argc, char **argv){
 
 				printf("Finished reservation execution!\n");
 
-				break;
-
-			case CMD_LIST:
+				break;}
+			
+			case CMD_LIST:{
 				if (datacenter_list(&dc) != 0) {
 					fprintf(stderr, "Failed to list VMs.\n");
 					continue;
 				}
 
-				break;
+				break;}
 
-			case CMD_WAIT:
+			case CMD_WAIT:{
 				unsigned int delay;
 
-				if(parse_wait(STDIN_FILENO, &delay) != 0){
+				if(parse_wait(fd, &delay) != 0){
 					fprintf(stderr, "Invalid wait command. See H (help) for usage.\n");
 					continue;
 				}
 
 				datacenter_wait(delay);
-				break;
+				break;}
 
-			case CMD_INVALID:
+			case CMD_INVALID:{
 				fprintf(stderr, "Invalid Command. See H (help) for usage.\n");
-				break;
+				break;}
 
-			case CMD_HELP:
+			case CMD_HELP:{
 				printf(
 					"Spaces between arguments are allowed, but not after command end.\n"
 					"Available commands:\n"
@@ -150,14 +155,23 @@ int main(int argc, char **argv){
 					" E <DELAY_MS>\n"
 					" H\n"
 				);
-				break;
+				break;}
 
-			case CMD_EMPTY:
-				break;
+			case CMD_EMPTY:{
+				break;}
 
-			case EOC:
-				datacenter_destroy(&dc);
-				return 0;
+			case EOC:{
+				j = 0;
+				break;}
+			}
+			
 		}
+		close(fd);
 	}
+	for(ssize_t i = 0; i < count; i++){
+          free((buffer)[i]);
+        }
+	free(buffer);
+	datacenter_destroy(&dc);
+	return 0;
 }
