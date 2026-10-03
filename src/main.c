@@ -48,12 +48,8 @@ int main(int argc, char **argv){
 
 	ssize_t count = list_conf_files(input_dir, &buffer);
 
-	if(count <= 0){
+	if(count == 0){
 		fprintf(stderr, "No .conf files\n");
-		for(ssize_t i = 0; i < count; i++){
-          free((buffer)[i]);
-        }
-		free(buffer);
 		return 0;
 	}
 
