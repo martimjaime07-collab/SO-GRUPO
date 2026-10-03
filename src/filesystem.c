@@ -31,11 +31,7 @@ int file_exists(const char *path){
   return S_ISREG(st.st_mode);
 }
 
-static int compare_strings(const void *a, const void *b){
-    const char *sa = *(const char * const *)a;
-    const char *sb = *(const char * const *)b;
-    return strcmp(sa,sb);
-  }
+
 
 int absolute_path(const char *path, char *buffer, size_t size){
   char *resolved = realpath(path, NULL);
@@ -54,6 +50,15 @@ int absolute_path(const char *path, char *buffer, size_t size){
   return 0;
 }
 
+
+static int compare_strings(const void *a, const void *b){
+    const char *sa = *(const char * const *)a;
+    const char *sb = *(const char * const *)b;
+    return strcmp(sa,sb);
+  }
+
+
+
 ssize_t list_conf_files(const char *path, char ***buffer){
 
   *buffer = NULL; 
@@ -62,7 +67,7 @@ ssize_t list_conf_files(const char *path, char ***buffer){
   
 
   if(dir == NULL){
-    perror("error opening dir");
+    perror("error opening dir \n");
     return -1;
   }
 
@@ -79,9 +84,6 @@ ssize_t list_conf_files(const char *path, char ***buffer){
 
   errno = 0;  
   while ((file = readdir(dir)) != NULL){
-
-    errno = 0;
-    
 
     size_t file_size = strlen(file->d_name);
     
@@ -102,7 +104,7 @@ ssize_t list_conf_files(const char *path, char ***buffer){
       char **tmp = realloc(*buffer, capacity * sizeof(char*));
 
       if(tmp == NULL){
-        perror("realloc error");
+        perror("realloc error\n");
         for(size_t i = 0; i < count; i++){
           free((*buffer)[i]);
         }
@@ -118,7 +120,7 @@ ssize_t list_conf_files(const char *path, char ***buffer){
     char *dup = strdup(file->d_name);
 
     if(dup == NULL){
-      perror("strdup error");
+      perror("strdup error\n");
       for(size_t i = 0; i < count; i++){
           free((*buffer)[i]);
         }
@@ -137,12 +139,11 @@ ssize_t list_conf_files(const char *path, char ***buffer){
   int readdir_errno = errno;
 
   closedir(dir);
-
-
-
-  qsort(*buffer, count, sizeof(char *), compare_strings);
   
   if(readdir_errno == 0){
+    if(count > 0){
+      qsort(*buffer, count, sizeof(char *), compare_strings);
+    }   
     return (ssize_t)count;
   }
   else{
