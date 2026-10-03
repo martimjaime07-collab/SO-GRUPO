@@ -2,6 +2,7 @@
 #define FILESYSTEM__H
 
 #include <stddef.h>
+#include <sys/types.h>
 
 /**
  * Checks whether a path exists and is a directory.
@@ -34,5 +35,27 @@ int file_exists(const char *path);
  * @return 1 if the path could not be resolved or the buffer is too small.
  */
 int absolute_path(const char *path, char *buffer, size_t size);
+
+/**
+ * Lists all files with a `.conf` extension in the given directory,
+ * sorted alphabetically.
+ *
+ * On success, `*buffer` is set to a newly allocated array of `n` strings,
+ * where `n` is the returned value. Each string is a path to a `.conf`
+ * file. The caller is responsible for freeing each string and the array
+ * itself.
+ *
+ * On failure (e.g. the directory cannot be opened, or memory allocation
+ * fails), `*buffer` is set to NULL and -1 is returned.
+ *
+ * If the directory contains no `.conf` files, `*buffer` is set to NULL
+ * and 0 is returned.
+ *
+ * @param path   Directory to search.
+ * @param buffer Output parameter receiving the allocated array of paths.
+ *
+ * @return The number of `.conf` files found, or -1 on error.
+ */
+ssize_t list_conf_files(const char *path, char ***buffer);
 
 #endif // FILESYSTEM__H

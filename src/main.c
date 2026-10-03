@@ -42,7 +42,24 @@ int main(int argc, char **argv){
 		return 1;
 	}
 
-	while(1){
+	char **buffer = NULL;
+
+	ssize_t count = list_conf_files(input_dir, &buffer);
+
+	//REMOVE BEFORE SUBMITING, DEBUG ONLY!!!
+	if(count == 0){
+		fprintf(stderr, "No .conf files\n");
+		return 1;
+	}
+	else{
+		printf("%ld\n", count);
+		for(int i = 0; i < count; i++){
+			printf("%s\n", buffer[i]);
+		}
+		return 0;
+	}
+
+	for(int i = 0; i < count; i++){
 		switch (get_next_command(STDIN_FILENO)){
 			case CMD_DEFINE: {
 				VMType vmtype;
