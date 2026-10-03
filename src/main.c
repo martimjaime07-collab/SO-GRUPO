@@ -48,10 +48,15 @@ int main(int argc, char **argv){
 
 	ssize_t count = list_conf_files(input_dir, &buffer);
 
-	if(count == 0){
-		fprintf(stderr, "No .conf files\n");
-		return 0;
-	}
+	if(count <= 0){
+	    if(count == 0){
+	        fprintf(stderr, "No .conf files\n");
+	    } else {
+	        fprintf(stderr, "Failed to list .conf files\n");
+	    }
+	    free(buffer);
+	    return 1;
+}
 
 	for(int i = 0; i < count; i++){
 		char path[MAX_PATH_SIZE];
