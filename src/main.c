@@ -46,6 +46,7 @@ int main(int argc, char **argv){
 
 	ssize_t count = list_conf_files(input_dir, &buffer);
 
+	//REMOVE BEFORE SUBMITING, DEBUG ONLY!!!
 	if(count == 0){
 		fprintf(stderr, "No .conf files\n");
 		return 1;
