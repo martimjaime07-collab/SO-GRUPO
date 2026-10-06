@@ -252,7 +252,15 @@ int spawn_all_vms(Reservation *res) {
 
 		// TODO: Implement fork code. Set VM PID and update VM state to running.
 
-		spawn_vm_child(vm);
+		int check = copy_dir(res-> id, vm->id, vm->type->input_folder);
+
+		//TODO: create 2 loops, first copies other creates vm to prevent zombie children in fork
+
+		if(check == 0){
+			spawn_vm_child(vm);
+		}
+		else{return 1;}
+		
 
 	}
 
