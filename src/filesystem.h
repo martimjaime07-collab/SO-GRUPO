@@ -58,4 +58,9 @@ int absolute_path(const char *path, char *buffer, size_t size);
  */
 ssize_t list_conf_files(const char *path, char ***buffer);
 
+
+
+
+int create_dir(const char *res_id, const char *vm_id, const char *vm_folder);
+
 #endif // FILESYSTEM__H

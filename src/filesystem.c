@@ -1,6 +1,7 @@
 #define _XOPEN_SOURCE 700
 
 #include "filesystem.h"
+#include "constants.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -51,11 +52,13 @@ int absolute_path(const char *path, char *buffer, size_t size){
 }
 
 
+
 static int compare_strings(const void *a, const void *b){
     const char *sa = *(const char * const *)a;
     const char *sb = *(const char * const *)b;
     return strcmp(sa,sb);
   }
+
 
 
 
@@ -114,6 +117,7 @@ ssize_t list_conf_files(const char *path, char ***buffer){
         closedir(dir);
         return -1;
       }
+      
       *buffer = tmp;
     }
 
@@ -141,16 +145,126 @@ ssize_t list_conf_files(const char *path, char ***buffer){
   closedir(dir);
   
   if(readdir_errno == 0){
+    
     if(count > 0){
       qsort(*buffer, count, sizeof(char *), compare_strings);
     }   
+    
     return (ssize_t)count;
   }
+  
   else{
+    
     for(size_t i = 0; i < count; i++){
           free((*buffer)[i]);
         }
     free(*buffer);
     *buffer = NULL;
     return -1;}
+}
+
+
+
+
+int aux_snprintf(char *buffer, size_t sizeof_buffer,const char *message){
+  
+  size_t size = strlen(buffer);
+
+  if(size >= sizeof_buffer){
+    fprintf(stderr, "buffer without space\n");
+    return -1;
+  }
+  
+
+  int snp = snprintf(buffer + size, sizeof_buffer - size, "/%s", message);
+  
+  if(snp < 0){
+    fprintf(stderr, "snprintf error\n");
+    return -1;}
+
+
+  else if((size_t)snp >= sizeof_buffer - size){
+    fprintf(stderr, "snprintf truncated\n");
+    return -1;
+  }
+  return 0;
+
+}
+
+
+
+int aux_mkdir(const char *buffer){
+  
+  int check = mkdir(buffer, 0777);
+  
+  if(check == -1){
+    if(errno == EEXIST){/*we just want to make sure the errno is EEXIST(already exists)*/}
+    else{
+      perror("mkdir error");
+      return -1;
+    }
+  }
+  return 0;
+}
+
+
+int open_dir(char *buffer, char *vm_folder){
+
+  
+}
+
+
+int create_dir(const char *res_id, const char *vm_id, const char *vm_folder){
+
+  int snp;
+  int check;
+
+  // it starts with "" bc aux_snprintf checks size and first iteration size needs to equal 0
+  char buffer[MAX_PATH_SIZE] = ""; 
+  const char *message  = "tmp/CloudIST";
+
+  snp = aux_snprintf(buffer, sizeof(buffer), message);
+
+  if(snp == -1){
+    return -1;
+  }
+
+  check = aux_mkdir(buffer);
+
+  if(check == -1){
+    return -1;
+  }
+
+  //folder res_id
+  snp = aux_snprintf(buffer, sizeof(buffer), res_id);
+
+  if(snp == -1){
+    return -1;
+  }
+
+  check = aux_mkdir(buffer);
+
+  if(check == -1){
+    return -1;
+  }
+
+  //folder vm_id
+  snp = aux_snprintf(buffer, sizeof(buffer), vm_id);
+
+  if(snp == -1){
+    return -1;
+  }
+
+  check = aux_mkdir(buffer);
+
+  if(check == -1){
+    return -1;
+  }
+
+  //full folder is now created, /tmp/CloudIST/<ID-reserva>/<ID-VM>, now we open vm_folder and copy to /tmp/...
+
+  int check = 
+
+
+  return 0;
 }
