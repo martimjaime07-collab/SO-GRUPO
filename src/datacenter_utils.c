@@ -241,29 +241,50 @@ void reservation_destroy(DataCenter *dc, Reservation *reservation) {
 
 void spawn_vm_child(VM *vm) {
 	(void)vm; // To avoid warning.
+	//exec(Ç)
 
 	// TODO: Limit RAM, DISK and use exec with cpulimit.
 
 	fprintf(stderr, "VM execution not implemented in base version.\n");
 }
 
-int spawn_all_vms(Reservation *res) {
+int spawn_all_vms(Reservation *res) 
+
+
 	for (size_t i = 0; i < res->num_vms; i++) {
+		
 		VM *vm = res->vms[i];
-
-		// TODO: Implement fork code. Set VM PID and update VM state to running.
-
 		int check = create_dir(res-> id, vm->id, vm->type->input_folder);
 
-		// TODO: create 2 loops, first creates dir other creates vm to prevent zombie children in fork
-
 		if(check == 0){
-			spawn_vm_child(vm);
+			continue;
 		}
 		else{return 1;}
+	}
+
+	for (size_t i = 0; i < res->num_vms; i++) {
 		
+		VM *vm = res->vms[i];
+		pid_t pid = fork();
+
+		if (pid < 0) {
+            perror("fork");
+            return 1;                 // handle error, kill previous child and return
+        }
+		else if(pid == 0){
+			//child
+			spawn_vm_child(vm);
+		}
+		else{
+			//parent saves pid
+			vm->pid = pid;
+			vm->state = VM_STATE_RUNNING;
+		}
 
 	}
+	
+	// TODO: Implement fork code. Set VM PID and update VM state to running.
+	// TODO: create 2 loops, first creates dir other creates vm
 
 	return 0;
 }
