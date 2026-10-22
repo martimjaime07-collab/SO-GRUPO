@@ -41,15 +41,15 @@ int absolute_path(const char *path, char *buffer, size_t size);
  * sorted alphabetically.
  *
  * On success, `*buffer` is set to a newly allocated array of `n` strings,
- * where `n` is the returned value. Each string is a path to a `.conf`
- * file. The caller is responsible for freeing each string and the array
+ * where `n` is the returned value. Each string is the name of a `.conf`
+ * file (without the directory). The caller is responsible for freeing each string and the array
  * itself.
  *
  * On failure (e.g. the directory cannot be opened, or memory allocation
  * fails), `*buffer` is set to NULL and -1 is returned.
  *
- * If the directory contains no `.conf` files, `*buffer` is set to NULL
- * and 0 is returned.
+ * If the directory contains no `.conf` files, 0 is returned and `*buffer`
+ * is still an allocated (empty) array that the caller must free.
  *
  * @param path   Directory to search.
  * @param buffer Output parameter receiving the allocated array of paths.
@@ -57,5 +57,18 @@ int absolute_path(const char *path, char *buffer, size_t size);
  * @return The number of `.conf` files found, or -1 on error.
  */
 ssize_t list_conf_files(const char *path, char ***buffer);
+
+/**
+ * Creates the folder /tmp/CloudIST/<res_id>/<vm_id> (and the missing parents)
+ * and recursively copies the contents of vm_folder into it, keeping the
+ * subfolders and the file permissions.
+ *
+ * @param res_id    Reservation id.
+ * @param vm_id     VM id.
+ * @param vm_folder Input folder given in the D command.
+ *
+ * @return 0 on success, -1 on error.
+ */
+int create_dir(const char *res_id, const char *vm_id, const char *vm_folder);
 
 #endif // FILESYSTEM__H

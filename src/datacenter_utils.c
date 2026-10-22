@@ -1,4 +1,5 @@
 #include "datacenter_utils.h"
+#include "filesystem.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -240,19 +241,64 @@ void reservation_destroy(DataCenter *dc, Reservation *reservation) {
 
 void spawn_vm_child(VM *vm) {
 	(void)vm; // To avoid warning.
-
+	
 	// TODO: Limit RAM, DISK and use exec with cpulimit.
 
-	fprintf(stderr, "VM execution not implemented in base version.\n");
+	struct rlimit lim;
+		
+	lim.rlim_cur = vm->type->required.ram << 30;
+	lim.rlim_max = vm->type->required.ram << 30;
+	if (setrlimit(RLIMIT_AS, &lim) == -1){
+		perror("setrlimit RAM");
+		_exit(1);
+	}
+
+	lim.rlim_cur = vm->type->required.disk << 30;
+	lim.rlim_max = vm->type->required.disk << 30;
+	if (setrlimit(RLIMIT_FSIZE, &lim) == -1){
+		perror("setrlimit disk");
+		_exit(1);
+	}
+
+	char *cpu_lim[] = {"cpulimit", "-q", "-f", "-l", "100", "--", vm->type->exec_path, NULL};
+	execvp("cpulimit", cpu_lim);
+
+	perror("execvp");
+	_exit(1);
 }
 
 int spawn_all_vms(Reservation *res) {
+	// First loop: prepare /tmp/CloudIST/<res>/<vm> for every VM (Exercise 1).
 	for (size_t i = 0; i < res->num_vms; i++) {
+		
 		VM *vm = res->vms[i];
+		int check = create_dir(res-> id, vm->id, vm->type->input_folder);
 
-		// TODO: Implement fork code. Set VM PID and update VM state to running.
+		if(check == 0){
+			continue;
+		}
+		else{return 1;}
+	}
 
-		spawn_vm_child(vm);
+	// Second loop: launch one process per VM (Exercise 2, in progress).
+	for (size_t i = 0; i < res->num_vms; i++) {
+
+		VM *vm = res->vms[i];
+		pid_t pid = fork();
+
+		if (pid < 0) {
+            perror("fork");
+            return 1;                 // handle error, kill previous child and return
+        }
+		else if(pid == 0){
+			//child
+			spawn_vm_child(vm);
+		}
+		else{
+			//parent saves pid
+			vm->pid = pid;
+			vm->state = VM_STATE_RUNNING;
+		}
 
 	}
 
@@ -262,8 +308,14 @@ int spawn_all_vms(Reservation *res) {
 void wait_for_all_vms(Reservation *res) {
 	for (size_t i = 0; i < res->num_vms; i++) {
 		// TODO: IMPLEMENT WAITING FOR VM
+		VM *vm = res->vms[i];
+		int status;
+		if (waitpid(vm->pid, &status, 0)==-1){
+			perror("waitpid");
+			continue;
+		}
 
-		res->vms[i]->state = VM_STATE_TERMINATED;
+		res->vms[i]->state = VM_STATE_TERMINATED;	
 	}
 }
 
