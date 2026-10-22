@@ -6,6 +6,7 @@
 
 #include "parser.h"
 #include "datacenter.h"
+#include "datacenter_utils.h"
 #include "constants.h"
 
 int main(int argc, char **argv){
@@ -76,6 +77,9 @@ int main(int argc, char **argv){
 		int j = 1;
 
 		while(j != 0){
+			pthread_mutex_lock(&dc.lock);
+			wait_for_all_vms(&dc, WNOHANG);
+			pthread_mutex_unlock(&dc.lock);
 			switch (get_next_command(fd)){
 			case CMD_DEFINE: {
 				VMType vmtype;
@@ -166,7 +170,16 @@ int main(int argc, char **argv){
 					continue;
 				}
 
-				datacenter_wait(delay);
+				unsigned int remaining = delay;
+				while (remaining > 0) {
+					unsigned int chunk = remaining > 50 ? 50 : remaining;
+					datacenter_wait(chunk);
+					remaining -= chunk;
+
+					pthread_mutex_lock(&dc.lock);
+					wait_for_all_vms(&dc, WNOHANG);
+					pthread_mutex_unlock(&dc.lock);
+				}
 				break;}
 
 			case CMD_INVALID:{
@@ -201,6 +214,7 @@ int main(int argc, char **argv){
           free((buffer)[i]);
         }
 	free(buffer);
+	wait_for_all_vms(&dc, 0);
 	datacenter_destroy(&dc);
 	return 0;
 }

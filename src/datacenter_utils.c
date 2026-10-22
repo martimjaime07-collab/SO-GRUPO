@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
+#include <errno.h>
 
 VMType *VMType_exists(DataCenter *dc, const char* type_id){
 	for(size_t i = 0; i < dc->num_vm_types; i++){
@@ -239,6 +240,7 @@ void reservation_destroy(DataCenter *dc, Reservation *reservation) {
 	dc->num_reservations--;
 }
 
+
 void spawn_vm_child(VM *vm) {
 	(void)vm; // To avoid warning.
 	
@@ -305,17 +307,66 @@ int spawn_all_vms(Reservation *res) {
 	return 0;
 }
 
-void wait_for_all_vms(Reservation *res) {
-	for (size_t i = 0; i < res->num_vms; i++) {
-		// TODO: IMPLEMENT WAITING FOR VM
-		VM *vm = res->vms[i];
+int destroy_vm_by_pid(DataCenter *dc, pid_t pid) {
+	for (size_t i = 0; i < dc->num_reservations; i++) {
+		Reservation *res = &dc->reservations[i];
+
+		for (size_t k = 0; k < res->num_vms; k++) {
+			if (res->vms[k]->pid != pid)
+				continue;
+
+			VM *vm = res->vms[k];
+			Server *server = vm->server;
+
+			// 1. Return the VM resources back to the hosting server.
+			resources_add(&server->available, vm->type->required);
+
+			// 2. Remove the VM from the server's hosted VM list.
+			for (size_t j = 0; j < server->num_hosted_vms; j++) {
+				if (server->hosted_vms[j] == vm) {
+					memmove(&server->hosted_vms[j],
+									&server->hosted_vms[j + 1],
+									(server->num_hosted_vms - j - 1) * sizeof(VM *));
+					server->num_hosted_vms--;
+					break;
+				}
+			}
+
+			// 3. Remove the VM from the reservation.
+			memmove(&res->vms[k], &res->vms[k + 1],(res->num_vms - k - 1) * sizeof(VM *));
+			res->num_vms--;
+
+			// 4. Free the VM.
+			free(vm);
+
+			// 5. If it was the last VM, remove the whole reservation.
+			if (res->num_vms == 0)
+				reservation_destroy(dc, res);
+
+			return 0;
+		}
+	}
+
+	return 1;
+}
+
+void wait_for_all_vms(DataCenter *dc, int options) {
+	while (1) {
 		int status;
-		if (waitpid(vm->pid, &status, 0)==-1){
-			perror("waitpid");
+		pid_t pid = waitpid(-1, &status, options);
+
+		if (pid > 0) {             // a VM finished: destroy it, look for more
+			destroy_vm_by_pid(dc, pid);
 			continue;
 		}
 
-		res->vms[i]->state = VM_STATE_TERMINATED;	
+		if (pid == 0)              // WNOHANG: none has finished yet
+			break;
+
+		if (errno == EINTR)        // interrupted by a signal: try again
+			continue;
+
+		break;                     // ECHILD: no more VMs running
 	}
 }
 

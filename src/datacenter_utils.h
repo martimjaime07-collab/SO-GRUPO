@@ -92,12 +92,22 @@ void spawn_vm_child(VM *vm);
 int spawn_all_vms(Reservation *res);
 
 /**
- * Blocks until every VM's process has exited, updating each VM's state
- * to VM_STATE_TERMINATED as its pid is reaped.
+ * Destroys the VM whose process has the given pid: returns its resources to
+ * the hosting server, removes it from the server's hosted VM list and from its
+ * reservation, and frees it. If it was the last VM of the reservation, the
+ * reservation is removed from the Data Center.
  *
- * @param res Pointer to the Reservation whose VMs should be waited on.
+ * @return 0 if the VM was found and destroyed, 1 otherwise.
  */
-void wait_for_all_vms(Reservation *res);
+int destroy_vm_by_pid(DataCenter *dc, pid_t pid);
+
+/**
+ * Collects the processes of VMs that have finished (from any reservation) and
+ * destroys each one with destroy_vm_by_pid().
+ * options = WNOHANG: only collects the ones already finished, never blocks.
+ * options = 0: blocks until every VM has finished.
+ */
+void wait_for_all_vms(DataCenter *dc, int options);
 
 /**
  * Converts a VM state to a human-readable string. Used by datacenter_list().

@@ -7,6 +7,7 @@
 #include "resources.h"
 #include "constants.h"
 #include "filesystem.h"
+#include <pthread.h>
 
 typedef struct VMType{
   char id[MAX_STRING_SIZE];        // Id of VM type. eg: "V1"
@@ -77,7 +78,7 @@ typedef struct DataCenter {
 
 	int configured;		      // Wheter the datacenter is configured or not.
     pthread_mutex_t lock;     // Protects all the fields above (main thread vs reaper thread).
-	int shutting_down;        // 1 when there are no more .conf files to process.
+	//int shutting_down;        // 1 when there are no more .conf files to process.
 } DataCenter;
 
 /**
