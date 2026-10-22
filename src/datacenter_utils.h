@@ -71,25 +71,36 @@ Reservation *find_pending_reservation(DataCenter *dc, const char *reservation_id
  */
 void reservation_destroy(DataCenter *dc, Reservation *reservation);
 
+// changed from here
 /**
  * Runs in the child process after fork(): sets resource limits (RAM,
  * disk) and execs the VM's workload under cpulimit. Never returns
  * (either execs successfully or calls exit(1) on failure).
  *
+ * The CPU percentage given to cpulimit is:
+ * 100 * vCPUs-of-VM * local_cores / (CPUs-per-server * num_servers)
+ *
+ * @param dc Pointer to the Data Center (number of servers, local cores).
  * @param vm Pointer to the VM being spawned.
+ * @param res_id Id of the reservation (the VM runs inside /tmp/CloudIST/<res_id>/<vm id>).
+ * @param exec_abs Absolute path of the executable (resolved before the chdir).
  */
-void spawn_vm_child(VM *vm);
+void spawn_vm_child(DataCenter *dc, VM *vm, const char *res_id, const char *exec_abs);
+// to here
 
+// changed from here
 /**
  * Forks one child per VM in the reservation, calling spawn_vm_child()
  * in each child and recording the pid/state in the parent.
  *
+ * @param dc Pointer to the Data Center.
  * @param res Pointer to the Reservation whose VMs should be spawned.
  *
  * @return 0 on success.
  * @return 1 if any fork() call fails.
  */
-int spawn_all_vms(Reservation *res);
+int spawn_all_vms(DataCenter *dc, Reservation *res);
+// to here
 
 /**
  * Destroys the VM whose process has the given pid: returns its resources to

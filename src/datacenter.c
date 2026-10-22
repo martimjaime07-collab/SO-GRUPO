@@ -15,6 +15,9 @@ void datacenter_init(DataCenter *dc) {
   dc->num_reservations = 0;
 
   dc->configured = 0;
+  // changed from here
+  dc->local_cores = 0;
+  // to here
 
   pthread_mutex_init(&dc->lock, NULL);
   //dc->shutting_down = 0;
@@ -127,7 +130,9 @@ int datacenter_execute(DataCenter *dc, const char *reservation_id) {
   Reservation *res = find_pending_reservation(dc, reservation_id);
   if (!res) return 1;
 
-  if (spawn_all_vms(res) != 0) return 1;
+  // changed from here
+  if (spawn_all_vms(dc, res) != 0) return 1;
+  // to here
 
   res->state = RES_STATE_RUNNING;
 

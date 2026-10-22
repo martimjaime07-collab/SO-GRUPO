@@ -77,6 +77,9 @@ typedef struct DataCenter {
     size_t num_reservations;
 
 	int configured;		      // Wheter the datacenter is configured or not.
+	// changed from here
+	size_t local_cores;       // Cores of the local machine selected to run the simulated Data Center.
+	// to here
     pthread_mutex_t lock;     // Protects all the fields above (main thread vs reaper thread).
 	//int shutting_down;        // 1 when there are no more .conf files to process.
 } DataCenter;

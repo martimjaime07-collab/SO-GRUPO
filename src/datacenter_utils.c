@@ -241,11 +241,19 @@ void reservation_destroy(DataCenter *dc, Reservation *reservation) {
 }
 
 
-void spawn_vm_child(VM *vm) {
-	(void)vm; // To avoid warning.
-	
-	// TODO: Limit RAM, DISK and use exec with cpulimit.
+// changed from here
+void spawn_vm_child(DataCenter *dc, VM *vm, const char *res_id, const char *exec_abs) {
+// to here
 
+	// changed from here
+	// Run the VM inside its own folder: /tmp/CloudIST/<res_id>/<vm_id>
+	char vm_dir[MAX_PATH_SIZE];
+	int n = snprintf(vm_dir, sizeof(vm_dir), "/tmp/CloudIST/%s/%s", res_id, vm->id);
+	if (n < 0 || (size_t)n >= sizeof(vm_dir) || chdir(vm_dir) == -1) {
+		perror("chdir VM folder");
+		_exit(1);
+	}
+	// to here
 	struct rlimit lim;
 		
 	lim.rlim_cur = vm->type->required.ram << 30;
@@ -262,14 +270,27 @@ void spawn_vm_child(VM *vm) {
 		_exit(1);
 	}
 
-	char *cpu_lim[] = {"cpulimit", "-q", "-f", "-l", "100", "--", vm->type->exec_path, NULL};
+	// changed from here
+	// CPULIMIT = 100 * vCPUs-of-VM * local_cores / (CPUs-per-server * num_servers)
+	double pct = 100.0 * vm->type->required.cpu * (double)dc->local_cores
+						 / (vm->server->total.cpu * (double)dc->num_servers);
+	int limit = (int)(pct + 0.5);
+	if (limit < 1)	limit = 1;
+
+	char limit_str[16];
+	snprintf(limit_str, sizeof(limit_str), "%d", limit);
+
+	char *cpu_lim[] = {"cpulimit", "-q", "-f", "-l", limit_str, "--", (char *)exec_abs, NULL};
+	// to here
 	execvp("cpulimit", cpu_lim);
 
 	perror("execvp");
 	_exit(1);
 }
 
-int spawn_all_vms(Reservation *res) {
+// changed from here
+int spawn_all_vms(DataCenter *dc, Reservation *res) {
+// to here
 	// First loop: prepare /tmp/CloudIST/<res>/<vm> for every VM (Exercise 1).
 	for (size_t i = 0; i < res->num_vms; i++) {
 		
@@ -286,6 +307,16 @@ int spawn_all_vms(Reservation *res) {
 	for (size_t i = 0; i < res->num_vms; i++) {
 
 		VM *vm = res->vms[i];
+
+		// changed from here
+		// Resolve the executable to an absolute path BEFORE the child does chdir().
+		char exec_abs[MAX_PATH_SIZE];
+		if (absolute_path(vm->type->exec_path, exec_abs, sizeof(exec_abs)) != 0) {
+			fprintf(stderr, "Could not resolve executable path %s\n", vm->type->exec_path);
+			return 1;
+		}
+		// to here
+
 		pid_t pid = fork();
 
 		if (pid < 0) {
@@ -294,7 +325,9 @@ int spawn_all_vms(Reservation *res) {
         }
 		else if(pid == 0){
 			//child
-			spawn_vm_child(vm);
+			// changed from here
+			spawn_vm_child(dc, vm, res->id, exec_abs);
+			// to here
 		}
 		else{
 			//parent saves pid
