@@ -48,14 +48,25 @@ int main(int argc, char **argv){
 
 	ssize_t count = list_conf_files(input_dir, &buffer);
 
-	if(count == 0){
-		fprintf(stderr, "No .conf files\n");
-		return 0;
-	}
+	if(count <= 0){
+	    if(count == 0){
+	        fprintf(stderr, "No .conf files\n");
+	    } else {
+	        fprintf(stderr, "Failed to list .conf files\n");
+	    }
+	    free(buffer);
+	    return 1;
+}
 
 	for(int i = 0; i < count; i++){
 		char path[MAX_PATH_SIZE];
-		snprintf(path, MAX_PATH_SIZE,"%s/%s",input_dir, buffer[i]);
+		int snp = snprintf(path, MAX_PATH_SIZE,"%s/%s",input_dir, buffer[i]);
+
+		if(snp < 0 || (size_t)snp >= MAX_PATH_SIZE){
+			fprintf(stderr, "Path too long: %s/%s\n", input_dir, buffer[i]);
+			continue;
+		}
+
 		int fd = open(path, O_RDONLY);
 
 		if(fd == -1){
@@ -74,10 +85,14 @@ int main(int argc, char **argv){
 					continue;
 				}
 
-				if(datacenter_define_VM(&dc, &vmtype) != 0){
-					fprintf(stderr, "Failed to define VM.\n");
-					continue;
-				}
+				pthread_mutex_lock(&dc.lock);                  // 1. close the lock
+    			int result = datacenter_define_VM(&dc, &vmtype); // 2. access the Data Center
+    			pthread_mutex_unlock(&dc.lock);                // 3. open it again
+
+    			// 4. only now test the result: the continue can no longer skip the unlock
+    			if (result != 0) {
+        			fprintf(stderr, "Failed to define VM.\n");
+        			continue;}
 
 				printf("VM successfully defined!\n");
 
@@ -94,10 +109,15 @@ int main(int argc, char **argv){
 					continue;
 				}
 
-				if (datacenter_reserve(&dc, &reservation) != 0) {
-					fprintf(stderr, "Failed to reserve VMs.\n");
-					continue;
-				}
+				pthread_mutex_lock(&dc.lock);                  // 1. close the lock
+    			int result = datacenter_reserve(&dc, &reservation); // 2. access the Data Center
+    			pthread_mutex_unlock(&dc.lock);                // 3. open it again
+
+    			// 4. only now test the result: the continue can no longer skip the unlock
+    			if (result != 0) {
+        			fprintf(stderr, "Failed to reserve VM.\n");
+        			continue;}
+
 
 				printf("Reservation made successfully!\n");
 
@@ -112,20 +132,29 @@ int main(int argc, char **argv){
 					continue;
 				}
 
-				if (datacenter_execute(&dc, id) != 0) {
-					fprintf(stderr, "Failed to execute reservation.\n");
-					continue;
-				}
+				pthread_mutex_lock(&dc.lock);                  // 1. close the lock
+    			int result = datacenter_execute(&dc, id); // 2. access the Data Center
+    			pthread_mutex_unlock(&dc.lock);                // 3. open it again
+
+    			// 4. only now test the result: the continue can no longer skip the unlock
+    			if (result != 0) {
+        			fprintf(stderr, "Failed to execute VM.\n");
+        			continue;}
+
 
 				printf("Finished reservation execution!\n");
 
 				break;}
 			
 			case CMD_LIST:{
-				if (datacenter_list(&dc) != 0) {
-					fprintf(stderr, "Failed to list VMs.\n");
-					continue;
-				}
+				pthread_mutex_lock(&dc.lock);                  // 1. close the lock
+    			int result = datacenter_list(&dc); // 2. access the Data Center
+    			pthread_mutex_unlock(&dc.lock);                // 3. open it again
+
+    			// 4. only now test the result: the continue can no longer skip the unlock
+    			if (result != 0) {
+        			fprintf(stderr, "Failed to list VM.\n");
+        			continue;}
 
 				break;}
 

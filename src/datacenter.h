@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 #include <sys/types.h>
-
+#include <pthread.h>   
 #include "resources.h"
 #include "constants.h"
 #include "filesystem.h"
@@ -76,6 +76,8 @@ typedef struct DataCenter {
     size_t num_reservations;
 
 	int configured;		      // Wheter the datacenter is configured or not.
+    pthread_mutex_t lock;     // Protects all the fields above (main thread vs reaper thread).
+	int shutting_down;        // 1 when there are no more .conf files to process.
 } DataCenter;
 
 /**
@@ -154,6 +156,3 @@ int datacenter_execute(DataCenter *dc, const char *reservation_id);
 void datacenter_wait(unsigned int delay_ms);
 
 #endif // DATACENTER__H
-
-
-

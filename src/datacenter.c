@@ -15,6 +15,11 @@ void datacenter_init(DataCenter *dc) {
   dc->num_reservations = 0;
 
   dc->configured = 0;
+
+  pthread_mutex_init(&dc->lock, NULL);
+  dc->shutting_down = 0;
+
+
 }
 
 void datacenter_destroy(DataCenter *dc) {
@@ -24,6 +29,7 @@ void datacenter_destroy(DataCenter *dc) {
     }
   }
   free(dc->servers);
+  pthread_mutex_destroy(&dc->lock);
 }
 
 int datacenter_configure(DataCenter *dc, size_t num_servers, Resources *resources){
