@@ -9,7 +9,7 @@
 void datacenter_init(DataCenter *dc) {
   dc->servers = NULL;
   dc->num_servers = 0;
-
+  dc->local_cores = 0;
   dc->num_vm_types = 0;
 
   dc->num_reservations = 0;
@@ -134,6 +134,22 @@ int datacenter_execute(DataCenter *dc, const char *reservation_id) {
 
   Reservation *res = find_pending_reservation(dc, reservation_id);
   if (!res) return 1;
+
+  /* CPU limit of each VM (formula given by the professors):
+   * 100 * vCPUs of the VM * local cores / (CPUs per server * number of servers)
+   * Rounded to an integer, at least 1 and at most 100 * local cores. */
+  for (size_t i = 0; i < res->num_vms; i++) {
+    VM *vm = res->vms[i];
+    double limit = 100.0 * vm->type->required.cpu * (double)dc->local_cores / (vm->server->total.cpu * (double)dc->num_servers);
+
+    unsigned long value = (unsigned long)(limit + 0.5);   
+    if (value < 1)
+      value = 1;
+    if (value > 100 * dc->local_cores)
+      value = 100 * dc->local_cores;
+
+    snprintf(vm->cpu_limit, sizeof(vm->cpu_limit), "%lu", value);
+  }
 
   if (spawn_all_vms(res) != 0) return 1;
 

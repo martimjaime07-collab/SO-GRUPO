@@ -15,7 +15,7 @@ int main(int argc, char **argv){
 	datacenter_init(&dc);
 
 	if (argc != 8) {
-    fprintf(stderr, "Usage: %s <servers> <ram> <disk> <cpus> <cores> <input_dir>\n", argv[0]);
+    fprintf(stderr, "Usage: %s <servers> <ram> <disk> <cpus> <cores> <input_dir> <max_threads>\n", argv[0]);
     return 1;
   }
 
@@ -44,11 +44,11 @@ int main(int argc, char **argv){
 	};
 
 	if(datacenter_configure(&dc, servers, &resources) != 0){
-		dc.local_cores = cores;
+		
 		fprintf(stderr, "Failed to configure Data Center.\n");
 		return 1;
 	}
-
+	dc.local_cores = cores;
 	char **buffer = NULL;
 
 	ssize_t count = list_conf_files(input_dir, &buffer);

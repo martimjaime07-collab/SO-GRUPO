@@ -262,7 +262,7 @@ void spawn_vm_child(VM *vm) {
 		_exit(1);
 	}
 
-	char *cpu_lim[] = {"cpulimit", "-q", "-f", "-l", "100", "--", vm->type->exec_path, NULL};
+	char *cpu_lim[] = {"cpulimit", "-q", "-f", "-l", vm->cpu_limit, "--", vm->type->exec_path, NULL};
 	execvp("cpulimit", cpu_lim);
 
 	perror("execvp");
@@ -287,8 +287,12 @@ int spawn_all_vms(Reservation *res) {
 
 		VM *vm = res->vms[i];
 		/* Folder where the VM runs: built in the parent, before the fork. */
+		char base_dir[MAX_PATH_SIZE];
+		if (cloudist_base_dir(base_dir, sizeof(base_dir)) != 0)
+			return 1;
+
 		char vm_dir[MAX_PATH_SIZE];
-		int snp = snprintf(vm_dir, sizeof(vm_dir), "/tmp/CloudIST/%s/%s", res->id, vm->id);
+		int snp = snprintf(vm_dir, sizeof(vm_dir), "%s/%s/%s", base_dir, res->id, vm->id);
 		if (snp < 0 || (size_t)snp >= sizeof(vm_dir)) {
 			fprintf(stderr, "VM folder path too long.\n");
 			return 1;

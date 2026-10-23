@@ -30,6 +30,7 @@ typedef struct VM {
   Server *server; // Server where the VM is placed.
   pid_t pid;      // PID of executable file.
   VMState state;  // State of the VM.
+  char cpu_limit[32]; // Value passed to cpulimit -l (percentage of CPU).
 } VM;
 
 typedef struct Server {

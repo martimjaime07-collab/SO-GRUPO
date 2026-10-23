@@ -15,7 +15,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <errno.h>
-
+#include <pwd.h>
 
 int path_exists(const char *path){
   struct stat st;
@@ -357,6 +357,29 @@ int open_dir(char *src, char *dest){
   return 0;
 }
 
+int cloudist_base_dir(char *buffer, size_t size){
+  /* Login of the user running CloudIST (on the RNL cluster: the Tecnico ID,
+   * e.g. ist1123456). Falls back to the password database if USER is unset. */
+  const char *user = getenv("USER");
+
+  if (user == NULL || user[0] == '\0') {
+    struct passwd *pw = getpwuid(getuid());
+    if (pw == NULL) {
+      fprintf(stderr, "Could not get the user name\n");
+      return -1;
+    }
+    user = pw->pw_name;
+  }
+
+  int snp = snprintf(buffer, size, "/tmp/CloudIST-%s", user);
+
+  if (snp < 0 || (size_t)snp >= size) {
+    fprintf(stderr, "snprintf truncated\n");
+    return -1;
+  }
+
+  return 0;
+}
 
 int create_dir(const char *res_id, const char *vm_id, const char *vm_folder){
 
@@ -365,9 +388,9 @@ int create_dir(const char *res_id, const char *vm_id, const char *vm_folder){
 
   // it starts with "" bc aux_snprintf checks size and first iteration size needs to equal 0
   char dest[MAX_PATH_SIZE] = ""; 
-  const char *message  = "tmp/CloudIST";
-
-  snp = aux_snprintf(dest, sizeof(dest), message);
+  
+  // dest = /tmp/CloudIST-<user>
+  snp = cloudist_base_dir(dest, sizeof(dest));
 
   if(snp == -1){
     return -1;

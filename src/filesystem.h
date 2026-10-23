@@ -59,6 +59,14 @@ int absolute_path(const char *path, char *buffer, size_t size);
 ssize_t list_conf_files(const char *path, char ***buffer);
 
 /**
+ * Writes into buffer the base folder of CloudIST for the current user:
+ * /tmp/CloudIST-<user> (on the RNL cluster, <user> is the Tecnico ID).
+ *
+ * @return 0 on success, -1 on error.
+ */
+int cloudist_base_dir(char *buffer, size_t size);
+
+/**
  * Creates the folder /tmp/CloudIST/<res_id>/<vm_id> (and the missing parents)
  * and recursively copies the contents of vm_folder into it, keeping the
  * subfolders and the file permissions.
