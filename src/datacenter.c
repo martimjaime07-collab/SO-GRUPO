@@ -78,6 +78,14 @@ int datacenter_define_VM(DataCenter *dc, VMType *type){
     fprintf(stderr, "Invalid executable path.\n");
     return 1;
   }
+  /* Store the executable as an absolute path: the VM runs inside its own
+   * folder (chdir), so a relative path would no longer be found there. */
+  char abs_exec[MAX_PATH_SIZE];
+  if (absolute_path(type->exec_path, abs_exec, sizeof(abs_exec)) != 0) {
+    fprintf(stderr, "Invalid executable path.\n");
+    return 1;
+  }
+  strcpy(type->exec_path, abs_exec);
 
   if (!path_exists(type->input_folder)) {
     fprintf(stderr, "Invalid input folder.\n");

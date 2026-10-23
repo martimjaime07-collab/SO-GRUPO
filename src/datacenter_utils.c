@@ -286,6 +286,13 @@ int spawn_all_vms(Reservation *res) {
 	for (size_t i = 0; i < res->num_vms; i++) {
 
 		VM *vm = res->vms[i];
+		/* Folder where the VM runs: built in the parent, before the fork. */
+		char vm_dir[MAX_PATH_SIZE];
+		int snp = snprintf(vm_dir, sizeof(vm_dir), "/tmp/CloudIST/%s/%s", res->id, vm->id);
+		if (snp < 0 || (size_t)snp >= sizeof(vm_dir)) {
+			fprintf(stderr, "VM folder path too long.\n");
+			return 1;
+		}
 		pid_t pid = fork();
 
 		if (pid < 0) {
@@ -293,6 +300,11 @@ int spawn_all_vms(Reservation *res) {
             return 1;                 // handle error, kill previous child and return
         }
 		else if(pid == 0){
+			if (chdir(vm_dir) == -1) {
+				perror("chdir");
+				_exit(1);
+			}
+			spawn_vm_child(vm);
 			//child
 			spawn_vm_child(vm);
 		}
