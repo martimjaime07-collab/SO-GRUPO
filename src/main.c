@@ -10,50 +10,40 @@
 #include "constants.h"
 
 int main(int argc, char **argv){
-	DataCenter dc;
-	datacenter_init(&dc);
+	
 
-	// changed from here
-	if (argc != 7 && argc != 8) {
-    fprintf(stderr, "Usage: %s <servers> <ram> <disk> <cpus> <local_cores> <input_dir> [max_threads]\n", argv[0]);
+	if (argc != 8) {
+    fprintf(stderr, "Usage: %s <servers> <ram> <disk> <cpus> <local_cores> <input_dir> <max_threads>\n", argv[0]);
     return 1;
   }
-	// to here
+
 
 	size_t servers;
 	size_t ram;
 	size_t disk;
 	double cpu;
-	// changed from here
 	size_t local_cores;
-	// to here
 	char *input_dir;
+	size_t max_threads;
+
 
 	if (parse_size_t_arg(argv[1], &servers) != 0 ||
 			parse_size_t_arg(argv[2], &ram) != 0 ||
 			parse_size_t_arg(argv[3], &disk) != 0 ||
 			parse_double_arg(argv[4], &cpu) != 0 ||
-			// changed from here
 			parse_size_t_arg(argv[5], &local_cores) != 0 || local_cores == 0 ||
-			path_exists(argv[6]) != 1) {
-			// to here
+			path_exists(argv[6]) != 1 ||
+			parse_size_t_arg(argv[7], &max_threads) != 0 || max_threads == 0) {
 		fprintf(stderr, "Invalid command line arguments.\n");
 		return 1;
 	}
 
-	// changed from here
+
 	input_dir = argv[6];
 
-	// Optional trailing <max_threads>: the public tests always pass it, so it is accepted and validated.
-	if (argc == 8) {
-		size_t max_threads;
-		if (parse_size_t_arg(argv[7], &max_threads) != 0 || max_threads == 0) {
-			fprintf(stderr, "Invalid command line arguments.\n");
-			return 1;
-		}
-		(void)max_threads;
-	}
-	// to here
+	DataCenter dc;
+	datacenter_init(&dc);
+
 	Resources resources = {
     .ram = ram,
     .disk = disk,
@@ -62,12 +52,11 @@ int main(int argc, char **argv){
 
 	if(datacenter_configure(&dc, servers, &resources) != 0){
 		fprintf(stderr, "Failed to configure Data Center.\n");
+		datacenter_destroy(&dc);
 		return 1;
 	}
 
-	// changed from here
 	dc.local_cores = local_cores;
-	// to here
 
 	char **buffer = NULL;
 
