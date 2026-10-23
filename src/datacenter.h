@@ -75,6 +75,8 @@ typedef struct DataCenter {
 
 	Reservation reservations[MAX_RESERVATIONS];
     size_t num_reservations;
+    
+    size_t local_cores;
 
 	int configured;		      // Wheter the datacenter is configured or not.
     pthread_mutex_t lock;     // Protects all the fields above (main thread vs reaper thread).

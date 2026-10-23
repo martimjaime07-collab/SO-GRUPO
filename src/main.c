@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
+#include <sys/wait.h>
 
 #include "parser.h"
 #include "datacenter.h"
@@ -13,8 +14,8 @@ int main(int argc, char **argv){
 	DataCenter dc;
 	datacenter_init(&dc);
 
-	if (argc != 6) {
-    fprintf(stderr, "Usage: %s <servers> <ram> <disk> <cpus> <input_dir>\n", argv[0]);
+	if (argc != 8) {
+    fprintf(stderr, "Usage: %s <servers> <ram> <disk> <cpus> <cores> <input_dir>\n", argv[0]);
     return 1;
   }
 
@@ -22,18 +23,20 @@ int main(int argc, char **argv){
 	size_t ram;
 	size_t disk;
 	double cpu;
+	size_t cores;
 	char *input_dir;
 
 	if (parse_size_t_arg(argv[1], &servers) != 0 ||
 			parse_size_t_arg(argv[2], &ram) != 0 ||
 			parse_size_t_arg(argv[3], &disk) != 0 ||
 			parse_double_arg(argv[4], &cpu) != 0 ||
-			path_exists(argv[5]) != 1) {
+			parse_size_t_arg(argv[5], &cores) != 0 ||
+			path_exists(argv[6]) != 1) {
 		fprintf(stderr, "Invalid command line arguments.\n");
 		return 1;
 	}
 
-	input_dir = argv[5];
+	input_dir = argv[6];
 	Resources resources = {
     .ram = ram,
     .disk = disk,
@@ -41,6 +44,7 @@ int main(int argc, char **argv){
 	};
 
 	if(datacenter_configure(&dc, servers, &resources) != 0){
+		dc.local_cores = cores;
 		fprintf(stderr, "Failed to configure Data Center.\n");
 		return 1;
 	}
