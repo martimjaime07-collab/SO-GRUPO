@@ -169,7 +169,7 @@ ssize_t list_conf_files(const char *path, char ***buffer){
 
 
 
-int aux_snprintf(char *buffer, size_t sizeof_buffer,const char *message){
+static int aux_snprintf(char *buffer, size_t sizeof_buffer,const char *message){
   
   size_t size = strlen(buffer);
 
@@ -196,7 +196,7 @@ int aux_snprintf(char *buffer, size_t sizeof_buffer,const char *message){
 
 
 
-int aux_mkdir(const char *buffer){
+static int aux_mkdir(const char *buffer){
   
   int check = mkdir(buffer, 0777);
   
@@ -211,7 +211,7 @@ int aux_mkdir(const char *buffer){
 }
 
 
-int open_dir(char *src, char *dest){
+static int open_dir(char *src, char *dest){
 
   size_t size_src = strlen(src);
   size_t size_dest = strlen(dest);
