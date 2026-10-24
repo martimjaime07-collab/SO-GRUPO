@@ -1,11 +1,15 @@
 #ifndef DATACENTER_UTILS__H
 #define DATACENTER_UTILS__H
 
+#include <sys/resource.h>
+
 #include "datacenter.h"
 
 /**
  * Checks if a VMType with the given id exists.
  * 
+ * The caller must hold vm_types_lock (for reading or for writing).
+ *
  * @param dc Pointer to Data Center.
  * @param type_id Id of VM type being checked.
  * 
@@ -22,6 +26,11 @@ VMType *VMType_exists(DataCenter *dc, const char* type_id);
  * Validation fails if any requested server does not have enough available
  * resources to host all the requested VMs assigned to it or if the request 
  * does not have valid parameters (VM types that do not exist, invalid server ids).
+ *
+ * The caller must hold the lock of every server used by the reservation, and
+ * item->vm_type must already be filled (done by datacenter_reserve). The
+ * check for a repeated reservation id is NOT done here, it is done when the
+ * reservation is inserted in the Data Center (datacenter_reserve).
  *
  * @param dc Data Center where the reservation will be validated.
  * @param reservation Reservation to validate.
@@ -50,7 +59,15 @@ int reservation_validate(DataCenter *dc, Reservation *reservation);
 int reservation_commit(DataCenter *dc, Reservation *reservation);
 
 /**
+ * Undoes reservation_commit (gives the resources back and frees the VMs).
+ * The caller must hold the locks of the servers used by the reservation.
+ */
+void reservation_rollback(Reservation *reservation, size_t initial_vms);
+
+/**
  * Looks up a reservation by id and checks that it is pending.
+ * The caller must hold dc->lock, and the returned pointer is only valid while
+ * it keeps holding it (the array is shifted when a reservation is removed).
  *
  * @param dc Pointer to a Data Center.
  * @param reservation_id ID of the reservation to look up.
@@ -71,36 +88,46 @@ Reservation *find_pending_reservation(DataCenter *dc, const char *reservation_id
  */
 void reservation_destroy(DataCenter *dc, Reservation *reservation);
 
-// changed from here
 /**
- * Runs in the child process after fork(): sets resource limits (RAM,
- * disk) and execs the VM's workload under cpulimit. Never returns
- * (either execs successfully or calls exit(1) on failure).
+ * Everything the child process needs after fork(). It is filled by the parent
+ * BEFORE the fork, because in a multi-threaded program the child may only call
+ * simple functions (chdir, setrlimit, execvp, write, _exit) until the exec.
+ */
+typedef struct SpawnInfo {
+  char vm_dir[MAX_PATH_SIZE];   // /tmp/CloudIST-<id>/<res_id>/<vm_id>
+  char exec_abs[MAX_PATH_SIZE]; // absolute path of the executable
+  char limit_str[16];           // CPULIMIT percentage, already as a string
+  rlim_t ram;                   // RLIMIT_AS value in bytes
+  rlim_t disk;                  // RLIMIT_FSIZE value in bytes
+} SpawnInfo;
+
+/**
+ * Runs in the child process after fork(): goes to the VM folder, sets the
+ * resource limits (RAM, disk) and execs the workload under cpulimit. Never
+ * returns (either execs successfully or exits with 1).
  *
- * The CPU percentage given to cpulimit is:
+ * The CPU percentage given to cpulimit (already inside info) is:
  * 100 * vCPUs-of-VM * local_cores / (CPUs-per-server * num_servers)
  *
- * @param dc Pointer to the Data Center (number of servers, local cores).
- * @param vm Pointer to the VM being spawned.
- * @param res_id Id of the reservation (the VM runs inside /tmp/CloudIST/<res_id>/<vm id>).
- * @param exec_abs Absolute path of the executable (resolved before the chdir).
+ * @param info Values prepared by the parent before the fork.
  */
-void spawn_vm_child(DataCenter *dc, VM *vm, const char *res_id, const char *exec_abs);
-// to here
+_Noreturn void spawn_vm_child(const SpawnInfo *info);
 
-// changed from here
 /**
- * Forks one child per VM in the reservation, calling spawn_vm_child()
- * in each child and recording the pid/state in the parent.
+ * Prepares the folder of every VM and forks one child per VM, calling
+ * spawn_vm_child() in each child and recording the pid/state in the parent.
+ * Works on a copy of the VM list so it does not need dc->lock while it copies
+ * files (that is the slow part).
  *
  * @param dc Pointer to the Data Center.
- * @param res Pointer to the Reservation whose VMs should be spawned.
+ * @param res_id Id of the reservation.
+ * @param vms Array with the VMs of the reservation.
+ * @param n Number of VMs in the array.
  *
  * @return 0 on success.
- * @return 1 if any fork() call fails.
+ * @return 1 on error.
  */
-int spawn_all_vms(DataCenter *dc, Reservation *res);
-// to here
+int spawn_all_vms(DataCenter *dc, const char *res_id, VM **vms, size_t n);
 
 /**
  * Destroys the VM whose process has the given pid: returns its resources to
@@ -116,7 +143,8 @@ int destroy_vm_by_pid(DataCenter *dc, pid_t pid);
  * Collects the processes of VMs that have finished (from any reservation) and
  * destroys each one with destroy_vm_by_pid().
  * options = WNOHANG: only collects the ones already finished, never blocks.
- * options = 0: blocks until every VM has finished.
+ * options = 0: blocks until every VM has finished (only use it when no other
+ * thread is running, because it holds proc_lock while it waits).
  */
 void wait_for_all_vms(DataCenter *dc, int options);
 
