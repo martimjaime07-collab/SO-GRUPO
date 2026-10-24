@@ -85,7 +85,7 @@ static void process_conf_file(DataCenter *dc, const char *path){
     			pthread_mutex_unlock(&dc->lock);                // 3. open it again
     			// 4. only now test the result: the continue can no longer skip the unlock
     			if (result != 0) {
-        			fprintf(stderr, "Failed to execute VMs.\n");
+        			fprintf(stderr, "Failed to execute reservation.\n");
         			continue;}
 				printf("Finished reservation execution!\n");
 				break;}
