@@ -22,31 +22,6 @@ typedef struct ThreadContext
 }ThreadContext;
 
 
-void *work_thread(void *arg){
-
-	ThreadContext *ctx = arg;
-	while(1){
-
-		pthread_mutex_lock(&ctx->mut);
-		size_t idx = ctx->index  ;
-		ctx->index = ctx-> index + 1;
-		pthread_mutex_unlock(&ctx->mut);
-		if (idx >= ctx->count)
-			break;
-		char path[MAX_PATH_SIZE];
-		int snp = snprintf(path, MAX_PATH_SIZE,"%s/%s",ctx->dir, ctx->list[idx]);
-
-		if (snp < 0 || (size_t)snp >= MAX_PATH_SIZE){
-			fprintf(stderr, "Path too long: %s/%s\n", ctx->dir, ctx->list[idx]);
-			continue;
-	}
-		process_conf_file(ctx->dc, path);
-	}
-
-	return NULL;
-
-}
-
 
 static void process_conf_file(DataCenter *dc, const char *path){
 	int fd = open(path, O_RDONLY);
@@ -168,6 +143,30 @@ static void process_conf_file(DataCenter *dc, const char *path){
 		close(fd);
 }
 
+static void *work_thread(void *arg){
+
+	ThreadContext *ctx = arg;
+	while(1){
+
+		pthread_mutex_lock(&ctx->mut);
+		size_t idx = ctx->index  ;
+		ctx->index = ctx-> index + 1;
+		pthread_mutex_unlock(&ctx->mut);
+		if (idx >= ctx->count)
+			break;
+		char path[MAX_PATH_SIZE];
+		int snp = snprintf(path, MAX_PATH_SIZE,"%s/%s",ctx->dir, ctx->list[idx]);
+
+		if (snp < 0 || (size_t)snp >= MAX_PATH_SIZE){
+			fprintf(stderr, "Path too long: %s/%s\n", ctx->dir, ctx->list[idx]);
+			continue;
+	}
+		process_conf_file(ctx->dc, path);
+	}
+
+	return NULL;
+
+}
 
 int main(int argc, char **argv){
 	DataCenter dc;
@@ -190,9 +189,9 @@ int main(int argc, char **argv){
 			parse_size_t_arg(argv[2], &ram) != 0 ||
 			parse_size_t_arg(argv[3], &disk) != 0 ||
 			parse_double_arg(argv[4], &cpu) != 0 ||
-			parse_size_t_arg(argv[5], &cores) != 0 ||
+			parse_size_t_arg(argv[5], &cores) != 0 || cores == 0 ||
 			path_exists(argv[6]) != 1 ||
-			parse_size_t_arg(argv[7], &max_threads) != 0) {
+			parse_size_t_arg(argv[7], &max_threads) != 0 || max_threads == 0) {
 		fprintf(stderr, "Invalid command line arguments.\n");
 		return 1;
 	}
@@ -220,6 +219,35 @@ int main(int argc, char **argv){
 	    }
 	    free(buffer);
 	    return 1;}
+
+
+	ThreadContext ctx;
+	ctx.dc = &dc;
+	ctx.list = buffer;
+	ctx.count = (size_t) count;
+	ctx.dir = input_dir;
+	ctx.index = 0;
+	pthread_mutex_init(&ctx.mut, NULL);
+	size_t created = 0; //how many thread where created
+
+	size_t n = max_threads < ctx.count ? max_threads : ctx.count;	
+	pthread_t threads[n];
+
+	for(size_t i = 0; i < n; i++){
+		int thread_created = pthread_create(&threads[i], NULL, work_thread, &ctx);
+		if (thread_created != 0){
+			fprintf(stderr, "Failed to create thread: %s\n", strerror(thread_created));
+			break;
+		}
+		created++;
+	}
+
+	for(size_t j = 0; j< created; j++){
+		pthread_join(threads[j], NULL);
+	}
+
+	pthread_mutex_destroy(&ctx.mut);
+
 
 
 	for(ssize_t i = 0; i < count; i++){
