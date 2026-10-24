@@ -10,100 +10,52 @@
 #include "datacenter_utils.h"
 #include "constants.h"
 
-int main(int argc, char **argv){
-	DataCenter dc;
-	datacenter_init(&dc);
 
-	if (argc != 8) {
-    fprintf(stderr, "Usage: %s <servers> <ram> <disk> <cpus> <cores> <input_dir> <max_threads>\n", argv[0]);
-    return 1;
-  }
 
-	size_t servers;
-	size_t ram;
-	size_t disk;
-	double cpu;
-	size_t cores;
-	char *input_dir;
 
-	if (parse_size_t_arg(argv[1], &servers) != 0 ||
-			parse_size_t_arg(argv[2], &ram) != 0 ||
-			parse_size_t_arg(argv[3], &disk) != 0 ||
-			parse_double_arg(argv[4], &cpu) != 0 ||
-			parse_size_t_arg(argv[5], &cores) != 0 ||
-			path_exists(argv[6]) != 1) {
-		fprintf(stderr, "Invalid command line arguments.\n");
-		return 1;
-	}
 
-	input_dir = argv[6];
-	Resources resources = {
-    .ram = ram,
-    .disk = disk,
-    .cpu = cpu
-	};
 
-	if(datacenter_configure(&dc, servers, &resources) != 0){
-		
-		fprintf(stderr, "Failed to configure Data Center.\n");
-		return 1;
-	}
-	dc.local_cores = cores;
-	char **buffer = NULL;
 
-	ssize_t count = list_conf_files(input_dir, &buffer);
 
-	if(count <= 0){
-	    if(count == 0){
-	        fprintf(stderr, "No .conf files\n");
-	    } else {
-	        fprintf(stderr, "Failed to list .conf files\n");
-	    }
-	    free(buffer);
-	    return 1;
-}
 
-	for(int i = 0; i < count; i++){
-		char path[MAX_PATH_SIZE];
-		int snp = snprintf(path, MAX_PATH_SIZE,"%s/%s",input_dir, buffer[i]);
 
-		if(snp < 0 || (size_t)snp >= MAX_PATH_SIZE){
-			fprintf(stderr, "Path too long: %s/%s\n", input_dir, buffer[i]);
-			continue;
-		}
 
-		int fd = open(path, O_RDONLY);
+
+
+
+
+
+
+
+static void process_conf_file(DataCenter *dc, const char *path){
+	int fd = open(path, O_RDONLY);
 
 		if(fd == -1){
 			fprintf(stderr, "Failed to open file.\n");
-			continue;
+			return;
 		}
 		int j = 1;
 
 		while(j != 0){
-			pthread_mutex_lock(&dc.lock);
-			wait_for_all_vms(&dc, WNOHANG);
-			pthread_mutex_unlock(&dc.lock);
+			pthread_mutex_lock(&dc->lock);
+			wait_for_all_vms(dc, WNOHANG);
+			pthread_mutex_unlock(&dc->lock);
 			switch (get_next_command(fd)){
+
 			case CMD_DEFINE: {
 				VMType vmtype;
-
 				if (parse_define(fd, &vmtype) != 0) {
 					fprintf(stderr, "Invalid define command. See H (help) for usage.\n");
 					continue;
 				}
-
-				pthread_mutex_lock(&dc.lock);                  // 1. close the lock
-    			int result = datacenter_define_VM(&dc, &vmtype); // 2. access the Data Center
-    			pthread_mutex_unlock(&dc.lock);                // 3. open it again
-
+				pthread_mutex_lock(&dc->lock);                  // 1. close the lock
+    			int result = datacenter_define_VM(dc, &vmtype); // 2. access the Data Center
+    			pthread_mutex_unlock(&dc->lock);                // 3. open it again
     			// 4. only now test the result: the continue can no longer skip the unlock
     			if (result != 0) {
         			fprintf(stderr, "Failed to define VM.\n");
         			continue;}
-
 				printf("VM successfully defined!\n");
-
 				break;
 			}
 
@@ -111,78 +63,61 @@ int main(int argc, char **argv){
 				Reservation reservation = {0};
 
 				size_t num_items = parse_reserve(fd, &reservation, MAX_RESERVATIONS_ITEMS);
-
 				if (num_items == 0) {
 					fprintf(stderr, "Invalid reserve command. See H (help) for usage.\n");
 					continue;
 				}
-
-				pthread_mutex_lock(&dc.lock);                  // 1. close the lock
-    			int result = datacenter_reserve(&dc, &reservation); // 2. access the Data Center
-    			pthread_mutex_unlock(&dc.lock);                // 3. open it again
-
+				pthread_mutex_lock(&dc->lock);                  // 1. close the lock
+    			int result = datacenter_reserve(dc, &reservation); // 2. access the Data Center
+    			pthread_mutex_unlock(&dc->lock);                // 3. open it again
     			// 4. only now test the result: the continue can no longer skip the unlock
     			if (result != 0) {
-        			fprintf(stderr, "Failed to reserve VM.\n");
+        			fprintf(stderr, "Failed to reserve VMs.\n");
         			continue;}
-
-
 				printf("Reservation made successfully!\n");
-
 				break;
 			}
 
 			case CMD_EXECUTE:{
 				char id[MAX_STRING_SIZE];
-
 				if(parse_execute(fd, id) != 0){
 					fprintf(stderr, "Invalid execute command. See H (help) for usage.\n");
 					continue;
 				}
-
-				pthread_mutex_lock(&dc.lock);                  // 1. close the lock
-    			int result = datacenter_execute(&dc, id); // 2. access the Data Center
-    			pthread_mutex_unlock(&dc.lock);                // 3. open it again
-
+				pthread_mutex_lock(&dc->lock);                  // 1. close the lock
+    			int result = datacenter_execute(dc, id); // 2. access the Data Center
+    			pthread_mutex_unlock(&dc->lock);                // 3. open it again
     			// 4. only now test the result: the continue can no longer skip the unlock
     			if (result != 0) {
-        			fprintf(stderr, "Failed to execute VM.\n");
+        			fprintf(stderr, "Failed to execute VMs.\n");
         			continue;}
-
-
 				printf("Finished reservation execution!\n");
-
 				break;}
 			
 			case CMD_LIST:{
-				pthread_mutex_lock(&dc.lock);                  // 1. close the lock
-    			int result = datacenter_list(&dc); // 2. access the Data Center
-    			pthread_mutex_unlock(&dc.lock);                // 3. open it again
-
+				pthread_mutex_lock(&dc->lock);                  // 1. close the lock
+    			int result = datacenter_list(dc); // 2. access the Data Center
+    			pthread_mutex_unlock(&dc->lock);                // 3. open it again
     			// 4. only now test the result: the continue can no longer skip the unlock
     			if (result != 0) {
-        			fprintf(stderr, "Failed to list VM.\n");
+        			fprintf(stderr, "Failed to list VMs.\n");
         			continue;}
-
 				break;}
 
 			case CMD_WAIT:{
 				unsigned int delay;
-
 				if(parse_wait(fd, &delay) != 0){
 					fprintf(stderr, "Invalid wait command. See H (help) for usage.\n");
 					continue;
 				}
-
 				unsigned int remaining = delay;
 				while (remaining > 0) {
 					unsigned int chunk = remaining > 50 ? 50 : remaining;
 					datacenter_wait(chunk);
 					remaining -= chunk;
-
-					pthread_mutex_lock(&dc.lock);
-					wait_for_all_vms(&dc, WNOHANG);
-					pthread_mutex_unlock(&dc.lock);
+					pthread_mutex_lock(&dc->lock);
+					wait_for_all_vms(dc, WNOHANG);
+					pthread_mutex_unlock(&dc->lock);
 				}
 				break;}
 
@@ -202,21 +137,82 @@ int main(int argc, char **argv){
 					" H\n"
 				);
 				break;}
-
 			case CMD_EMPTY:{
 				break;}
-
 			case EOC:{
 				j = 0;
 				break;}
-			}
-			
+			}			
 		}
 		close(fd);
+}
+
+
+int main(int argc, char **argv){
+	DataCenter dc;
+	datacenter_init(&dc);
+
+	if (argc != 8) {
+    fprintf(stderr, "Usage: %s <servers> <ram> <disk> <cpus> <cores> <input_dir> <max_threads>\n", argv[0]);
+    return 1;
+  }
+
+	size_t servers;
+	size_t ram;
+	size_t disk;
+	double cpu;
+	size_t cores;
+	char *input_dir;
+	size_t max_threads;
+
+	if (parse_size_t_arg(argv[1], &servers) != 0 ||
+			parse_size_t_arg(argv[2], &ram) != 0 ||
+			parse_size_t_arg(argv[3], &disk) != 0 ||
+			parse_double_arg(argv[4], &cpu) != 0 ||
+			parse_size_t_arg(argv[5], &cores) != 0 ||
+			path_exists(argv[6]) != 1 ||
+			parse_size_t_arg(argv[7], &max_threads) != 0) {
+		fprintf(stderr, "Invalid command line arguments.\n");
+		return 1;
 	}
+
+	input_dir = argv[6];
+	Resources resources = {
+    .ram = ram,
+    .disk = disk,
+    .cpu = cpu};
+
+	if(datacenter_configure(&dc, servers, &resources) != 0){
+		fprintf(stderr, "Failed to configure Data Center.\n");
+		return 1;}
+
+	dc.local_cores = cores;
+	char **buffer = NULL;
+
+	ssize_t count = list_conf_files(input_dir, &buffer);
+
+	if(count <= 0){
+	    if(count == 0){
+	        fprintf(stderr, "No .conf files\n");
+	    } else {
+	        fprintf(stderr, "Failed to list .conf files\n");
+	    }
+	    free(buffer);
+	    return 1;}
+
+	for(int i = 0; i < count; i++){
+		char path[MAX_PATH_SIZE];
+		int snp = snprintf(path, MAX_PATH_SIZE,"%s/%s",input_dir, buffer[i]);
+
+		if(snp < 0 || (size_t)snp >= MAX_PATH_SIZE){
+			fprintf(stderr, "Path too long: %s/%s\n", input_dir, buffer[i]);
+			continue;}
+		process_conf_file(&dc, path);	
+		}
+
 	for(ssize_t i = 0; i < count; i++){
-          free((buffer)[i]);
-        }
+          free((buffer)[i]);}
+
 	free(buffer);
 	wait_for_all_vms(&dc, 0);
 	datacenter_destroy(&dc);
