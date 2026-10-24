@@ -11,20 +11,41 @@
 #include "constants.h"
 
 
+typedef struct ThreadContext
+{
+	DataCenter *dc;          // Data Center shared by all threads.
+	char **list;             // Names of the .conf files (sorted).
+	size_t count;            // Number of .conf files.
+	const char *dir;         // Folder of the .conf files (INPUT_DIR).
+	size_t index;            // Next file to process (protected by mut).
+	pthread_mutex_t mut;     // Protects index.
+}ThreadContext;
 
 
+void *work_thread(void *arg){
 
+	ThreadContext *ctx = arg;
+	while(1){
 
+		pthread_mutex_lock(&ctx->mut);
+		size_t idx = ctx->index  ;
+		ctx->index = ctx-> index + 1;
+		pthread_mutex_unlock(&ctx->mut);
+		if (idx >= ctx->count)
+			break;
+		char path[MAX_PATH_SIZE];
+		int snp = snprintf(path, MAX_PATH_SIZE,"%s/%s",ctx->dir, ctx->list[idx]);
 
+		if (snp < 0 || (size_t)snp >= MAX_PATH_SIZE){
+			fprintf(stderr, "Path too long: %s/%s\n", ctx->dir, ctx->list[idx]);
+			continue;
+	}
+		process_conf_file(ctx->dc, path);
+	}
 
+	return NULL;
 
-
-
-
-
-
-
-
+}
 
 
 static void process_conf_file(DataCenter *dc, const char *path){
@@ -200,15 +221,6 @@ int main(int argc, char **argv){
 	    free(buffer);
 	    return 1;}
 
-	for(int i = 0; i < count; i++){
-		char path[MAX_PATH_SIZE];
-		int snp = snprintf(path, MAX_PATH_SIZE,"%s/%s",input_dir, buffer[i]);
-
-		if(snp < 0 || (size_t)snp >= MAX_PATH_SIZE){
-			fprintf(stderr, "Path too long: %s/%s\n", input_dir, buffer[i]);
-			continue;}
-		process_conf_file(&dc, path);	
-		}
 
 	for(ssize_t i = 0; i < count; i++){
           free((buffer)[i]);}
