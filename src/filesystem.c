@@ -365,10 +365,8 @@ int create_dir(const char *res_id, const char *vm_id, const char *vm_folder){
 
   // it starts with "" bc aux_snprintf checks size and first iteration size needs to equal 0
   char dest[MAX_PATH_SIZE] = ""; 
-  const char *message  = "tmp/CloudIST-ist1118487"; // change ist number for whoever uses it
-
-  snp = aux_snprintf(dest, sizeof(dest), message);
-
+  snp = snprintf(dest, sizeof(dest), "%s", CLOUDIST_BASE_DIR);
+  
   if(snp == -1){
     return -1;
   }

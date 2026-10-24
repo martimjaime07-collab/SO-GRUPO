@@ -248,7 +248,7 @@ void spawn_vm_child(DataCenter *dc, VM *vm, const char *res_id, const char *exec
 	// changed from here
 	// Run the VM inside its own folder: /tmp/CloudIST/<res_id>/<vm_id>
 	char vm_dir[MAX_PATH_SIZE];
-	int n = snprintf(vm_dir, sizeof(vm_dir), "/tmp/CloudIST/%s/%s", res_id, vm->id);
+	int n = snprintf(vm_dir, sizeof(vm_dir), CLOUDIST_BASE_DIR "/%s/%s", res_id, vm->id);
 	if (n < 0 || (size_t)n >= sizeof(vm_dir) || chdir(vm_dir) == -1) {
 		perror("chdir VM folder");
 		_exit(1);
