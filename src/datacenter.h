@@ -3,7 +3,6 @@
 
 #include <stdio.h>
 #include <sys/types.h>
-#include <pthread.h>   
 #include "resources.h"
 #include "constants.h"
 #include "filesystem.h"
@@ -39,6 +38,8 @@ typedef struct Server {
 
 	VM *hosted_vms[MAX_HOSTED_VMS];
     size_t num_hosted_vms;
+
+	pthread_mutex_t lock; // Protects 'available', 'hosted_vms' and 'num_hosted_vms' of this server.
 } Server;
 
 typedef enum {
@@ -77,11 +78,25 @@ typedef struct DataCenter {
     size_t num_reservations;
 
 	int configured;		      // Wheter the datacenter is configured or not.
-	// changed from here
 	size_t local_cores;       // Cores of the local machine selected to run the simulated Data Center.
-	// to here
-    pthread_mutex_t lock;     // Protects all the fields above (main thread vs reaper thread).
-	//int shutting_down;        // 1 when there are no more .conf files to process.
+
+	/*
+	 * LOCKS (to avoid deadlocks they must always be taken in this order):
+	 *   vm_types_lock -> proc_lock -> server locks (lower server id first) -> lock
+	 *
+	 * - vm_types_lock   : vm_types and num_vm_types. Many readers at the same
+	 *                     time (reserve, list), one writer (define).
+	 * - servers[i].lock : resources and hosted VMs of server i.
+	 * - lock            : the list of reservations (and the VMs inside them).
+	 * - proc_lock       : fork() and waitpid(), so that nobody reaps a child
+	 *                     before its pid was saved in the VM.
+	 * num_servers, servers[i].total and local_cores never change after the
+	 * configuration, so they can be read without locking. The elements of
+	 * vm_types are never removed or moved, so a VMType* stays valid.
+	 */
+    pthread_rwlock_t vm_types_lock;
+    pthread_mutex_t lock;
+	pthread_mutex_t proc_lock;
 } DataCenter;
 
 /**
@@ -110,7 +125,7 @@ void datacenter_destroy(DataCenter *dc);
 int datacenter_configure(DataCenter *dc, size_t num_pcs, Resources *resources);
 
 /**
- * Defines a VM for the Data Center
+ * Defines a VM for the Data Center (takes the lock by itself).
  *
  * @param dc Pointer to a Data Center.
  * @param type Pointer to VM type.
@@ -121,7 +136,9 @@ int datacenter_configure(DataCenter *dc, size_t num_pcs, Resources *resources);
 int datacenter_define_VM(DataCenter *dc, struct VMType *type);
 
 /**
- * Reserves a set of VMs for a given reservation.
+ * Reserves a set of VMs for a given reservation. Only the servers used by
+ * the reservation are locked, so reservations on different servers run in
+ * parallel. Takes the locks by itself.
  *
  * @param dc Pointer to a Data Center.
  * @param reservation Pointer to a Reservation.

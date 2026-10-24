@@ -15,14 +15,11 @@ void datacenter_init(DataCenter *dc) {
   dc->num_reservations = 0;
 
   dc->configured = 0;
-  // changed from here
   dc->local_cores = 0;
-  // to here
 
+  pthread_rwlock_init(&dc->vm_types_lock, NULL);
   pthread_mutex_init(&dc->lock, NULL);
-  //dc->shutting_down = 0;
-
-
+  pthread_mutex_init(&dc->proc_lock, NULL);
 }
 
 void datacenter_destroy(DataCenter *dc) {
@@ -31,8 +28,13 @@ void datacenter_destroy(DataCenter *dc) {
       free(dc->servers[i].hosted_vms[j]);
     }
   }
+  for (size_t i = 0; i < dc->num_servers; i++) {
+    pthread_mutex_destroy(&dc->servers[i].lock);
+  }
   free(dc->servers);
+  pthread_rwlock_destroy(&dc->vm_types_lock);
   pthread_mutex_destroy(&dc->lock);
+  pthread_mutex_destroy(&dc->proc_lock);
 }
 
 int datacenter_configure(DataCenter *dc, size_t num_servers, Resources *resources){
@@ -58,6 +60,7 @@ int datacenter_configure(DataCenter *dc, size_t num_servers, Resources *resource
     dc->servers[i].total = *resources;
     dc->servers[i].available = *resources;
     dc->servers[i].num_hosted_vms = 0;
+    pthread_mutex_init(&dc->servers[i].lock, NULL);
   }
 
   dc->num_servers = num_servers;
@@ -66,7 +69,8 @@ int datacenter_configure(DataCenter *dc, size_t num_servers, Resources *resource
   return 0;
 }
 
-int datacenter_define_VM(DataCenter *dc, VMType *type){
+/* Caller must hold vm_types_lock for writing. */
+static int define_VM_locked(DataCenter *dc, VMType *type){
   if (!dc->configured) {
     fprintf(stderr, "Data Center needs to be configured!\n");
     return 1;
@@ -97,28 +101,102 @@ int datacenter_define_VM(DataCenter *dc, VMType *type){
   return 0;
 }
 
+int datacenter_define_VM(DataCenter *dc, VMType *type){
+  pthread_rwlock_wrlock(&dc->vm_types_lock);
+  int result = define_VM_locked(dc, type);
+  pthread_rwlock_unlock(&dc->vm_types_lock);
+  return result;
+}
+
 int datacenter_reserve(DataCenter *dc, Reservation *reservation) {
   if (!dc->configured) {
     fprintf(stderr, "Data Center needs to be configured!\n");
     return 1;
   }
 
-  if(reservation_validate(dc, reservation) != 0){
+  // needed[i] = 1 if the reservation uses server i+1
+  int *needed = calloc(dc->num_servers, sizeof(int));
+  if (needed == NULL) {
+    fprintf(stderr, "Failed to allocate memory.\n");
     return 1;
   }
 
-  if (dc->num_reservations >= MAX_RESERVATIONS){
-    fprintf(stderr, "Max number of reservations reached\n");
+  // 1. Check the servers and find the VM type of every item. The types are
+  // only read, so many threads can do this at the same time. We let go of the
+  // lock right after: the VMType pointers stay valid (types are never removed).
+  int valid = 1;
+
+  pthread_rwlock_rdlock(&dc->vm_types_lock);
+  for (size_t i = 0; i < reservation->items_count; i++) {
+    ReservationItem *item = &reservation->items[i];
+
+    if (item->server_id == 0 || item->server_id > dc->num_servers) {
+      fprintf(stderr, "Invalid server in reservation.\n");
+      valid = 0;
+      break;
+    }
+
+    item->vm_type = VMType_exists(dc, item->vm_type_id);
+    if (item->vm_type == NULL) {
+      fprintf(stderr, "VM of type %s does not exist\n", item->vm_type_id);
+      valid = 0;
+      break;
+    }
+
+    needed[item->server_id - 1] = 1;
+  }
+  pthread_rwlock_unlock(&dc->vm_types_lock);
+
+  if (!valid) {
+    free(needed);
     return 1;
   }
 
-  if (reservation_commit(dc, reservation) != 0)
-    return 1;
+  // 2. Lock ONLY the servers we use, always from the lowest id to the highest
+  // (same order for everyone => no deadlock).
+  for (size_t i = 0; i < dc->num_servers; i++) {
+    if (needed[i]) pthread_mutex_lock(&dc->servers[i].lock);
+  }
 
-  dc->reservations[dc->num_reservations] = *reservation;
-  dc->num_reservations++;
+  int result = 1;
 
-  return 0;
+  if (reservation_validate(dc, reservation) == 0 &&
+      reservation_commit(dc, reservation) == 0) {
+
+    // 3. Only now we take the global lock, just to put the reservation in the list.
+    // This is also where we check if the id already exists (another thread may
+    // have inserted the same id).
+    pthread_mutex_lock(&dc->lock);
+
+    int duplicated = 0;
+    for (size_t i = 0; i < dc->num_reservations; i++) {
+      if (strncmp(dc->reservations[i].id, reservation->id, MAX_STRING_SIZE) == 0) {
+        duplicated = 1;
+        break;
+      }
+    }
+
+    if (duplicated) {
+      fprintf(stderr, "Reservation with id %s already exists.\n", reservation->id);
+      reservation_rollback(reservation, 0);
+    } else if (dc->num_reservations >= MAX_RESERVATIONS) {
+      fprintf(stderr, "Max number of reservations reached\n");
+      reservation_rollback(reservation, 0);
+    } else {
+      dc->reservations[dc->num_reservations] = *reservation;
+      dc->num_reservations++;
+      result = 0;
+    }
+
+    pthread_mutex_unlock(&dc->lock);
+  }
+
+  for (size_t i = 0; i < dc->num_servers; i++) {
+    if (needed[i]) pthread_mutex_unlock(&dc->servers[i].lock);
+  }
+
+  free(needed);
+  return result;
 }
 
 int datacenter_execute(DataCenter *dc, const char *reservation_id) {
@@ -127,14 +205,30 @@ int datacenter_execute(DataCenter *dc, const char *reservation_id) {
     return 1;
   }
 
+  // Under the lock we only find the reservation and take a copy of what we
+  // need. The slow part (copying files, fork) is done without dc->lock.
+  // (We can not keep the Reservation pointer: when another reservation is
+  // destroyed the array is shifted and the pointer would point to a wrong one.)
+  VM *vms[MAX_RESERVATION_VMS];
+  size_t num_vms;
+  char res_id[MAX_STRING_SIZE];
+
+  pthread_mutex_lock(&dc->lock);
+
   Reservation *res = find_pending_reservation(dc, reservation_id);
-  if (!res) return 1;
+  if (!res) {
+    pthread_mutex_unlock(&dc->lock);
+    return 1;
+  }
 
-  // changed from here
-  if (spawn_all_vms(dc, res) != 0) return 1;
-  // to here
+  res->state = RES_STATE_RUNNING; // so no other thread can execute it again
+  num_vms = res->num_vms;
+  memcpy(vms, res->vms, num_vms * sizeof(VM *));
+  snprintf(res_id, sizeof(res_id), "%s", res->id);
 
-  res->state = RES_STATE_RUNNING;
+  pthread_mutex_unlock(&dc->lock);
+
+  if (spawn_all_vms(dc, res_id, vms, num_vms) != 0) return 1;
 
   return 0;
 }
@@ -145,31 +239,41 @@ int datacenter_list(DataCenter *dc) {
     return 1;
   }
 
+  // Lock every server (lowest id first) and then the global lock, so the
+  // listing is a consistent snapshot. flockfile makes the whole listing
+  // come out together even if other threads are printing.
+  pthread_rwlock_rdlock(&dc->vm_types_lock);
+  for (size_t i = 0; i < dc->num_servers; i++) {
+    pthread_mutex_lock(&dc->servers[i].lock);
+  }
+  pthread_mutex_lock(&dc->lock);
+  flockfile(stdout);
+
   printf("=================================== DATA CENTER STATUS ===================================\n");
   printf("\n[ PHYSICAL SERVERS ] (%zu total)\n", dc->num_servers);
   printf("------------------------------------------------------------------------------------------\n");
 
   for (size_t i = 0; i < dc->num_servers; i++) {
-    Server server = dc->servers[i];
+    Server *server = &dc->servers[i];
 
-    Resources used = server.total;
-    resources_sub(&used, server.available);
+    Resources used = server->total;
+    resources_sub(&used, server->available);
 
-    printf(" Server #%zu\n", server.id);
+    printf(" Server #%zu\n", server->id);
     printf("   ├─ Resources Total     : %6.2f vCPUs | %3zu GB RAM | %3zu GB Disk\n",
-            server.total.cpu, server.total.ram, server.total.disk);
+            server->total.cpu, server->total.ram, server->total.disk);
     printf("   ├─ Resources Used      : %6.2f vCPUs | %3zu GB RAM | %3zu GB Disk\n",
             used.cpu, used.ram, used.disk);
     printf("   ├─ Resources Available : %6.2f vCPUs | %3zu GB RAM | %3zu GB Disk\n",
-            server.available.cpu, server.available.ram, server.available.disk);
-    printf("   └─ Hosted VMs (%zu):\n", server.num_hosted_vms);
+            server->available.cpu, server->available.ram, server->available.disk);
+    printf("   └─ Hosted VMs (%zu):\n", server->num_hosted_vms);
 
-    if (server.num_hosted_vms == 0) {
+    if (server->num_hosted_vms == 0) {
       printf("        (None)\n");
     } else {
-      for (size_t j = 0; j < server.num_hosted_vms; j++) {
-        VM *vm = server.hosted_vms[j];
-        const char *prefix = (j == server.num_hosted_vms - 1) ? "└──" : "├──";
+      for (size_t j = 0; j < server->num_hosted_vms; j++) {
+        VM *vm = server->hosted_vms[j];
+        const char *prefix = (j == server->num_hosted_vms - 1) ? "└──" : "├──";
 
         printf("        %s VM ID : %-16s | Type: %-10s | State: %-10s",
                 prefix,
@@ -234,6 +338,13 @@ int datacenter_list(DataCenter *dc) {
   }
 
   printf("================================================================--------------------------\n\n");
+
+  funlockfile(stdout);
+  pthread_mutex_unlock(&dc->lock);
+  for (size_t i = dc->num_servers; i > 0; i--) {
+    pthread_mutex_unlock(&dc->servers[i - 1].lock);
+  }
+  pthread_rwlock_unlock(&dc->vm_types_lock);
   return 0;
 }
 
