@@ -102,10 +102,17 @@ int spawn_all_vms(Reservation *res);
 int destroy_vm_by_pid(DataCenter *dc, pid_t pid);
 
 /**
- * Collects the processes of VMs that have finished (from any reservation) and
- * destroys each one with destroy_vm_by_pid().
- * options = WNOHANG: only collects the ones already finished, never blocks.
- * options = 0: blocks until every VM has finished.
+ * Collects (reaps) the processes of VMs that have finished, from any
+ * reservation, and destroys each of those VMs with destroy_vm_by_pid().
+ * Must be called with the Data Center lock closed.
+ *
+ * With options = WNOHANG it only collects the VMs that have already finished
+ * and returns immediately (used while commands are being processed).
+ * With options = 0 it blocks until every VM process has finished (used at the
+ * end of the program).
+ *
+ * @param dc Pointer to the Data Center.
+ * @param options Options passed to waitpid (WNOHANG or 0).
  */
 void wait_for_all_vms(DataCenter *dc, int options);
 

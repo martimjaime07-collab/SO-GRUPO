@@ -10,7 +10,10 @@
 #include "datacenter_utils.h"
 #include "constants.h"
 
-
+/*
+ * Data shared by all the worker threads
+ * main creates one ThreadContext and passes its address to every thread.
+ */
 typedef struct ThreadContext
 {
 	DataCenter *dc;          // Data Center shared by all threads.
@@ -22,35 +25,43 @@ typedef struct ThreadContext
 }ThreadContext;
 
 
+/*
+  Reads and runs all the commands of one .conf file.
+  Called by the worker threads, one file at a time.
 
+ */
 static void process_conf_file(DataCenter *dc, const char *path){
 	int fd = open(path, O_RDONLY);
 
 		if(fd == -1){
 			fprintf(stderr, "Failed to open file.\n");
-			return;
+			return;  
 		}
-		int j = 1;
+		int j = 1;  
 
 		while(j != 0){
+			/* Before each command, collect (and destroy) the VMs that have
+			 * already finished. WNOHANG: never blocks. */
 			pthread_mutex_lock(&dc->lock);
 			wait_for_all_vms(dc, WNOHANG);
 			pthread_mutex_unlock(&dc->lock);
+
 			switch (get_next_command(fd)){
 
 			case CMD_DEFINE: {
 				VMType vmtype;
+				// Parsing only reads the file: no lock needed.
 				if (parse_define(fd, &vmtype) != 0) {
 					fprintf(stderr, "Invalid define command. See H (help) for usage.\n");
 					continue;
 				}
-				pthread_mutex_lock(&dc->lock);                  // 1. close the lock
-    			int result = datacenter_define_VM(dc, &vmtype); // 2. access the Data Center
-    			pthread_mutex_unlock(&dc->lock);                // 3. open it again
-    			// 4. only now test the result: the continue can no longer skip the unlock
-    			if (result != 0) {
-        			fprintf(stderr, "Failed to define VM.\n");
-        			continue;}
+				// lock -> access the Data Center -> unlock, and only then test the
+				pthread_mutex_lock(&dc->lock);
+				int result = datacenter_define_VM(dc, &vmtype);
+				pthread_mutex_unlock(&dc->lock);
+				if (result != 0) {
+					fprintf(stderr, "Failed to define VM.\n");
+					continue;}
 				printf("VM successfully defined!\n");
 				break;
 			}
@@ -63,13 +74,14 @@ static void process_conf_file(DataCenter *dc, const char *path){
 					fprintf(stderr, "Invalid reserve command. See H (help) for usage.\n");
 					continue;
 				}
-				pthread_mutex_lock(&dc->lock);                  // 1. close the lock
-    			int result = datacenter_reserve(dc, &reservation); // 2. access the Data Center
-    			pthread_mutex_unlock(&dc->lock);                // 3. open it again
-    			// 4. only now test the result: the continue can no longer skip the unlock
-    			if (result != 0) {
-        			fprintf(stderr, "Failed to reserve VMs.\n");
-        			continue;}
+				// Validate + commit inside the same lock: no other thread can take
+				// the server resources between the check and the allocation.
+				pthread_mutex_lock(&dc->lock);
+				int result = datacenter_reserve(dc, &reservation);
+				pthread_mutex_unlock(&dc->lock);
+				if (result != 0) {
+					fprintf(stderr, "Failed to reserve VMs.\n");
+					continue;}
 				printf("Reservation made successfully!\n");
 				break;
 			}
@@ -80,24 +92,26 @@ static void process_conf_file(DataCenter *dc, const char *path){
 					fprintf(stderr, "Invalid execute command. See H (help) for usage.\n");
 					continue;
 				}
-				pthread_mutex_lock(&dc->lock);                  // 1. close the lock
-    			int result = datacenter_execute(dc, id); // 2. access the Data Center
-    			pthread_mutex_unlock(&dc->lock);                // 3. open it again
-    			// 4. only now test the result: the continue can no longer skip the unlock
-    			if (result != 0) {
-        			fprintf(stderr, "Failed to execute reservation.\n");
-        			continue;}
+				// The forks happen with the lock closed, so no thread can collect a
+				// VM before its PID has been stored.
+				pthread_mutex_lock(&dc->lock);
+				int result = datacenter_execute(dc, id);
+				pthread_mutex_unlock(&dc->lock);
+				if (result != 0) {
+					fprintf(stderr, "Failed to execute reservation.\n");
+					continue;}
 				printf("Finished reservation execution!\n");
 				break;}
-			
+
 			case CMD_LIST:{
-				pthread_mutex_lock(&dc->lock);                  // 1. close the lock
-    			int result = datacenter_list(dc); // 2. access the Data Center
-    			pthread_mutex_unlock(&dc->lock);                // 3. open it again
-    			// 4. only now test the result: the continue can no longer skip the unlock
-    			if (result != 0) {
-        			fprintf(stderr, "Failed to list VMs.\n");
-        			continue;}
+				// Only reads, but must not read the state while another thread is
+				// changing it.
+				pthread_mutex_lock(&dc->lock);
+				int result = datacenter_list(dc);
+				pthread_mutex_unlock(&dc->lock);
+				if (result != 0) {
+					fprintf(stderr, "Failed to list VMs.\n");
+					continue;}
 				break;}
 
 			case CMD_WAIT:{
@@ -106,6 +120,9 @@ static void process_conf_file(DataCenter *dc, const char *path){
 					fprintf(stderr, "Invalid wait command. See H (help) for usage.\n");
 					continue;
 				}
+				/* Sleep in chunks of 50 ms (WITHOUT the lock, so the other threads
+				  keep working) and collect finished VMs in between, so a VM that
+				  ends during the wait is destroyed right away. */
 				unsigned int remaining = delay;
 				while (remaining > 0) {
 					unsigned int chunk = remaining > 50 ? 50 : remaining;
@@ -136,37 +153,57 @@ static void process_conf_file(DataCenter *dc, const char *path){
 			case CMD_EMPTY:{
 				break;}
 			case EOC:{
-				j = 0;
+				j = 0;   // end of this file: leave the while
 				break;}
-			}			
+			}
 		}
 		close(fd);
 }
 
+
+/*
+  Repeatedly takes the next .conf file that no thread has processed yet and
+  processes it, until there are no files left. This way the files are split
+  among the threads and none is processed twice.
+
+ */
 static void *work_thread(void *arg){
 
+	// pthread_create gives us the context as a void *: get its real type back.
 	ThreadContext *ctx = arg;
-	while(1){
 
+	while(1){
+		/* Take the next file (critical section): read and increment the shared
+		  index with the mutex closed, so two threads never get the same file.
+		  The value is kept in a LOCAL variable, because after the unlock the
+		  shared index can be changed by another thread at any time. */
 		pthread_mutex_lock(&ctx->mut);
-		size_t idx = ctx->index  ;
-		ctx->index = ctx-> index + 1;
+		size_t idx = ctx->index;
+		ctx->index = ctx->index + 1;
 		pthread_mutex_unlock(&ctx->mut);
+
+		// All files already taken by some thread: this thread is done.
 		if (idx >= ctx->count)
 			break;
+
+		// path is local: each thread has its own (on its own stack).
 		char path[MAX_PATH_SIZE];
 		int snp = snprintf(path, MAX_PATH_SIZE,"%s/%s",ctx->dir, ctx->list[idx]);
 
 		if (snp < 0 || (size_t)snp >= MAX_PATH_SIZE){
 			fprintf(stderr, "Path too long: %s/%s\n", ctx->dir, ctx->list[idx]);
 			continue;
-	}
+		}
+
+		/* Processed OUTSIDE ctx->mut (it only protects the index): otherwise the
+		 other threads would wait for this whole file and there would be no
+		 parallelism. The Data Center is protected by dc->lock inside. */
 		process_conf_file(ctx->dc, path);
 	}
 
 	return NULL;
-
 }
+
 
 int main(int argc, char **argv){
 	DataCenter dc;
@@ -181,9 +218,9 @@ int main(int argc, char **argv){
 	size_t ram;
 	size_t disk;
 	double cpu;
-	size_t cores;
-	char *input_dir;
-	size_t max_threads;
+	size_t cores;        // cores of the local machine used by CloudIST
+	char *input_dir;     // folder with the .conf files
+	size_t max_threads;  // maximum number of worker threads (Exercise 3)
 
 	if (parse_size_t_arg(argv[1], &servers) != 0 ||
 			parse_size_t_arg(argv[2], &ram) != 0 ||
@@ -206,7 +243,10 @@ int main(int argc, char **argv){
 		fprintf(stderr, "Failed to configure Data Center.\n");
 		return 1;}
 
+	// Used in the CPU limit formula of each VM (datacenter_execute).
 	dc.local_cores = cores;
+
+	// Names of the .conf files of input_dir, sorted alphabetically.
 	char **buffer = NULL;
 
 	ssize_t count = list_conf_files(input_dir, &buffer);
@@ -220,35 +260,42 @@ int main(int argc, char **argv){
 	    free(buffer);
 	    return 1;}
 
-
+	/* Context shared by all the worker threads. It is a local variable of main,
+	  but main only leaves this block after joining every thread, so it exists
+	  for as long as the threads use it. */
 	ThreadContext ctx;
 	ctx.dc = &dc;
 	ctx.list = buffer;
 	ctx.count = (size_t) count;
 	ctx.dir = input_dir;
-	ctx.index = 0;
+	ctx.index = 0;                     
 	pthread_mutex_init(&ctx.mut, NULL);
-	size_t created = 0; //how many thread where created
+	size_t created = 0;            
 
-	size_t n = max_threads < ctx.count ? max_threads : ctx.count;	
+	
+	size_t n = max_threads < ctx.count ? max_threads : ctx.count;
 	pthread_t threads[n];
 
+	/* Create all the threads first, so they run in parallel.
+	  pthread_create returns 0 on success or the error code (it does not set
+	  errno, so strerror is used instead of perror). */
 	for(size_t i = 0; i < n; i++){
-		int thread_created = pthread_create(&threads[i], NULL, work_thread, &ctx);
-		if (thread_created != 0){
-			fprintf(stderr, "Failed to create thread: %s\n", strerror(thread_created));
-			break;
+		int err = pthread_create(&threads[i], NULL, work_thread, &ctx);
+		if (err != 0){
+			fprintf(stderr, "Failed to create thread: %s\n", strerror(err));
+			break;   // the threads already created process all the files anyway
 		}
 		created++;
 	}
 
-	for(size_t j = 0; j< created; j++){
+	/* Only then wait for them (in a separate loop: joining inside the first
+	 * loop would run one thread at a time). Only the threads that exist. */
+	for(size_t j = 0; j < created; j++){
 		pthread_join(threads[j], NULL);
 	}
 
+	
 	pthread_mutex_destroy(&ctx.mut);
-
-
 
 	for(ssize_t i = 0; i < count; i++){
           free((buffer)[i]);}

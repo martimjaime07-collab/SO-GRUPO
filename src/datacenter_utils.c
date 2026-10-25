@@ -240,12 +240,19 @@ void reservation_destroy(DataCenter *dc, Reservation *reservation) {
 	dc->num_reservations--;
 }
 
-
+/*
+ * Runs ONLY in the child process, right after the fork (and the chdir into the
+ * VM folder). Limits are set before the exec because they are kept by the new
+ * program: cpulimit and the VM executable inherit them. The parent is not
+ * affected, since each process has its own limits.
+ */
 void spawn_vm_child(VM *vm) {
 	(void)vm; // To avoid warning.
 	
 	// TODO: Limit RAM, DISK and use exec with cpulimit.
-
+	/* Limit RAM: maximum memory of the process (GB -> bytes: << 30).
+	 * rlim_cur is the limit in force; rlim_max is the ceiling. Both equal, so the
+	 * VM program cannot raise its own limit. */
 	struct rlimit lim;
 		
 	lim.rlim_cur = vm->type->required.ram << 30;
@@ -262,15 +269,28 @@ void spawn_vm_child(VM *vm) {
 		_exit(1);
 	}
 
+	/* Replace the child with cpulimit, which launches the VM's executable and
+	 * keeps its CPU usage under vm->cpu_limit percent (computed by
+	 * datacenter_execute). Same words as in the terminal, one per position,
+	 * NULL at the end. execvp looks for cpulimit in the PATH. */
 	char *cpu_lim[] = {"cpulimit", "-q", "-f", "-l", vm->cpu_limit, "--", vm->type->exec_path, NULL};
 	execvp("cpulimit", cpu_lim);
-
+	/* Only reached if execvp failed. The child must never return from this
+	 * function: if it did, it would keep running the parent's loop (forking
+	 * more children and reading commands). _exit is used instead of exit so
+	 * the stdio buffers inherited from the parent are not flushed twice. */
 	perror("execvp");
 	_exit(1);
 }
 
+
+/*
+ * Called by datacenter_execute (command A) with the Data Center lock closed.
+ * Because the lock is held during the forks, no thread can collect a VM before
+ * its PID has been stored below.
+ */
 int spawn_all_vms(Reservation *res) {
-	// First loop: prepare /tmp/CloudIST/<res>/<vm> for every VM (Exercise 1).
+	// First loop: prepare /tmp/CloudIST/<res>/<vm> for every VM.
 	for (size_t i = 0; i < res->num_vms; i++) {
 		
 		VM *vm = res->vms[i];
@@ -334,10 +354,10 @@ int destroy_vm_by_pid(DataCenter *dc, pid_t pid) {
 			VM *vm = res->vms[k];
 			Server *server = vm->server;
 
-			// 1. Return the VM resources back to the hosting server.
+			// Return the VM resources back to the hosting server.
 			resources_add(&server->available, vm->type->required);
 
-			// 2. Remove the VM from the server's hosted VM list.
+			// Remove the VM from the server's hosted VM list.
 			for (size_t j = 0; j < server->num_hosted_vms; j++) {
 				if (server->hosted_vms[j] == vm) {
 					memmove(&server->hosted_vms[j],
@@ -348,14 +368,14 @@ int destroy_vm_by_pid(DataCenter *dc, pid_t pid) {
 				}
 			}
 
-			// 3. Remove the VM from the reservation.
+			// Remove the VM from the reservation.
 			memmove(&res->vms[k], &res->vms[k + 1],(res->num_vms - k - 1) * sizeof(VM *));
 			res->num_vms--;
 
 			// 4. Free the VM.
 			free(vm);
 
-			// 5. If it was the last VM, remove the whole reservation.
+			// If it was the last VM, remove the whole reservation.
 			if (res->num_vms == 0)
 				reservation_destroy(dc, res);
 

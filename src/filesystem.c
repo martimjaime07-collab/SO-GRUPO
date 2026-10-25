@@ -55,7 +55,12 @@ int absolute_path(const char *path, char *buffer, size_t size){
 }
 
 
-
+/*
+ * Comparison function for qsort (alphabetical order of the .conf names).
+ * qsort works with arrays of any type, so it gives us pointers to the elements
+ * as const void *. Our elements are char *, so each argument is really a
+ * char ** : we convert it back and dereference it to get the string.
+ */
 static int compare_strings(const void *a, const void *b){
     const char *sa = *(const char * const *)a;
     const char *sb = *(const char * const *)b;
@@ -66,6 +71,8 @@ static int compare_strings(const void *a, const void *b){
 
 
 ssize_t list_conf_files(const char *path, char ***buffer){
+  /* buffer is the address of the char ** of the caller, so we can give it
+   * back the array we allocate here. */
 
   *buffer = NULL; 
 
@@ -168,7 +175,12 @@ ssize_t list_conf_files(const char *path, char ***buffer){
 
 
 
-
+/*
+ * Appends "/message" to the end of the path stored in buffer
+ * (e.g. "/tmp/CloudIST-ist1" + "res_a" -> "/tmp/CloudIST-ist1/res_a").
+ *
+ * @return 0 on success, -1 if the result does not fit in the buffer.
+ */
 int aux_snprintf(char *buffer, size_t sizeof_buffer,const char *message){
   
   size_t size = strlen(buffer);
@@ -195,7 +207,12 @@ int aux_snprintf(char *buffer, size_t sizeof_buffer,const char *message){
 }
 
 
-
+/*
+ * Creates one folder. If it already exists (e.g. the folder of the reservation,
+ * for its 2nd VM) it is not an error.
+ *
+ * @return 0 on success, -1 on error.
+ */
 int aux_mkdir(const char *buffer){
   
   int check = mkdir(buffer, 0777);
@@ -210,7 +227,17 @@ int aux_mkdir(const char *buffer){
   return 0;
 }
 
-
+/*
+ * Recursively copies the contents of folder src into folder dest (which must
+ * already exist): files are copied block by block and subfolders are created
+ * and copied by calling this same function.
+ *
+ * src and dest are buffers of MAX_PATH_SIZE that this function changes: for
+ * each entry it appends "/<name>" to both and, at the end of that entry, cuts
+ * them back to their original length (by writing '\0' there).
+ *
+ * @return 0 on success, -1 on error.
+ */
 int open_dir(char *src, char *dest){
 
   size_t size_src = strlen(src);
@@ -335,7 +362,7 @@ int open_dir(char *src, char *dest){
       close(fd_dest);
   }
 
-
+  // Cut "/<name>" off both paths, ready for the next entry.
   src[size_src] = '\0';
   dest[size_dest] = '\0';
 
