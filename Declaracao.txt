@@ -1,7 +1,11 @@
 Nós, abaixo assinados,
 Martim Gonçalo Baranita Jaime, n.º 118487, LEIC-A
 Guilherme José Caixeirinho Gomes, n.º 117572, LEIC-A
-declaramos, sob compromisso de honra, que o trabalho intitulado "[Título do Trabalho]", realizado no âmbito da unidade curricular [Nome da UC], resultou da participação ativa de todos os elementos do grupo. Todas as decisões e o conteúdo técnico deste trabalho são da nossa autoria. Foram utilizadas [listar ferramentas de IA] para [funções]. Ao entregar o nosso projeto assumimos a responsabilidade e autoria de qualquer linha de código do projeto e aceitamos que iremos reprovar à unidade curricular caso não sejamos capaz de compreender e/ou explicar qualquer trecho de código da entrega seja no teste prático e/ou na discussão final.
+declaramos, sob compromisso de honra, que o trabalho intitulado "CloudIST", realizado no âmbito da unidade curricular Sistemas Operativos, 
+resultou da participação ativa de todos os elementos do grupo. Todas as decisões e o conteúdo técnico deste trabalho são da nossa autoria. 
+Foram utilizadas o Deepseek e o Claude para explicar como desenvolver certas funçoes mais dificeis e certos topicos que nao estavam tao bem consolidados. 
+Ao entregar o nosso projeto assumimos a responsabilidade e autoria de qualquer linha de código do projeto e aceitamos que iremos reprovar à unidade curricular
+caso não sejamos capaz de compreender e/ou explicar qualquer trecho de código da entrega seja no teste prático e/ou na discussão final.
 ...
 Declaramos que o trabalho é original e respeita as normas académicas em vigor.
 Lisboa, 25/10/26
